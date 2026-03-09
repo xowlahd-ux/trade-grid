@@ -1,4 +1,4 @@
-name: grid-parallel-meta-branch5a
+name: grid-parallel-meta-branch5a-safe
 
 on:
   workflow_dispatch:
@@ -24,9 +24,13 @@ on:
         required: true
         default: "0.0020"
       shard_count:
-        description: "parallel shards to use (1-64)"
+        description: "parallel shards to use (1-8 recommended)"
         required: true
         default: "8"
+      max_parallel:
+        description: "max concurrent shard jobs (1-4 recommended)"
+        required: true
+        default: "4"
       meta_grid_yaml:
         description: "meta grid yaml path"
         required: true
@@ -44,14 +48,20 @@ on:
         required: true
         default: "0.30"
 
+concurrency:
+  group: grid-safe-${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: ${{ github.workspace }}
     outputs:
       shard_count: ${{ steps.shard_plan.outputs.shard_count }}
+      max_parallel: ${{ steps.shard_plan.outputs.max_parallel }}
       shard_matrix: ${{ steps.shard_plan.outputs.shard_matrix }}
 
     steps:
@@ -87,26 +97,16 @@ jobs:
         id: shard_plan
         env:
           INPUT_SHARD_COUNT: ${{ inputs.shard_count }}
+          INPUT_MAX_PARALLEL: ${{ inputs.max_parallel }}
         run: |
-          python - <<'PY'
-          import json
-          import os
-
-          count = int(os.environ["INPUT_SHARD_COUNT"])
-          if count < 1 or count > 64:
-              raise SystemExit("shard_count must be between 1 and 64")
-
-          matrix = {
-              "engine": ["meta", "branch5a"],
-              "shard_idx": list(range(count)),
-          }
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"shard_count={count}\n")
-              f.write(f"shard_matrix={json.dumps(matrix, separators=(',', ':'))}\n")
-
-          print(json.dumps(matrix, ensure_ascii=False))
-          PY
+          python -c "import json, os; count=int(os.environ['INPUT_SHARD_COUNT']); mp=int(os.environ['INPUT_MAX_PARALLEL']); \
+          if count < 1 or count > 8: raise SystemExit('shard_count must be between 1 and 8'); \
+          if mp < 1 or mp > 4: raise SystemExit('max_parallel must be between 1 and 4'); \
+          mp=min(mp, count * 2); \
+          matrix={'engine':['meta','branch5a'],'shard_idx':list(range(count))}; \
+          out=os.environ['GITHUB_OUTPUT']; \
+          open(out,'a',encoding='utf-8').write(f'shard_count={count}\nmax_parallel={mp}\nshard_matrix={json.dumps(matrix,separators=(\",\",\":\"))}\n'); \
+          print(json.dumps({'shard_count':count,'max_parallel':mp,'matrix':matrix}, ensure_ascii=False))"
 
       - name: Download prices
         run: |
@@ -116,32 +116,25 @@ jobs:
             --end-date "${{ inputs.end_date }}" \
             --out-csv data/prices.csv
 
-      - name: Preview prices
-        run: |
-          python - <<'PY'
-          import pandas as pd
-          px = pd.read_csv("data/prices.csv")
-          print(px.head(5).to_string(index=False))
-          print()
-          print(px.tail(5).to_string(index=False))
-          PY
-
       - name: Upload price artifact
         uses: actions/upload-artifact@v4
         with:
           name: prices-${{ github.run_id }}
           if-no-files-found: error
+          compression-level: 0
           path: data/prices.csv
 
   run-shards:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: ${{ github.workspace }}
 
     strategy:
       fail-fast: false
+      max-parallel: ${{ fromJson(needs.prepare.outputs.max_parallel) }}
       matrix: ${{ fromJson(needs.prepare.outputs.shard_matrix) }}
 
     steps:
@@ -192,6 +185,7 @@ jobs:
         with:
           name: shard-${{ matrix.engine }}-${{ matrix.shard_idx }}-${{ github.run_id }}
           if-no-files-found: error
+          compression-level: 0
           path: |
             out/grid_${{ matrix.engine }}_shard_${{ matrix.shard_idx }}.csv
             out/grid_${{ matrix.engine }}_shard_${{ matrix.shard_idx }}.json
@@ -199,6 +193,7 @@ jobs:
   aggregate:
     needs: run-shards
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: ${{ github.workspace }}
@@ -249,24 +244,10 @@ jobs:
             --hybrid-rebalance-modes "always,month_end" \
             --hybrid-override-modes "none,meta_bear_crash_full"
 
-      - name: Show aggregate summary
-        run: |
-          python - <<'PY'
-          import pandas as pd
-          print(pd.read_csv("out/aggregate/summary.csv").to_string(index=False))
-          print()
-          p = "out/aggregate/hybrid_candidates.csv"
-          try:
-              df = pd.read_csv(p)
-              print(df.head(20).to_string(index=False))
-          except FileNotFoundError:
-              print("hybrid_candidates.csv not found")
-          PY
-
       - name: Upload aggregate artifact
         uses: actions/upload-artifact@v4
         with:
           name: aggregate-${{ github.run_id }}
           if-no-files-found: error
-          path: |
-            out/aggregate/
+          compression-level: 0
+          path: out/aggregate/
