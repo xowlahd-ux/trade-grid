@@ -1,0 +1,272 @@
+name: grid-parallel-meta-branch5a
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "YYYY-MM-DD"
+        required: true
+        default: "2000-01-01"
+      end_date:
+        description: "YYYY-MM-DD or latest"
+        required: true
+        default: "latest"
+      execution_mode:
+        description: "mode1 or mode2"
+        required: true
+        default: "mode2"
+      buy_cost:
+        description: "buy cost fraction"
+        required: true
+        default: "0.0020"
+      sell_cost:
+        description: "sell cost fraction"
+        required: true
+        default: "0.0020"
+      shard_count:
+        description: "parallel shards to use (1-64)"
+        required: true
+        default: "8"
+      meta_grid_yaml:
+        description: "meta grid yaml path"
+        required: true
+        default: "config/grid_meta.yml"
+      branch_grid_yaml:
+        description: "branch5a grid yaml path"
+        required: true
+        default: "config/grid_branch5a.yml"
+      hybrid_core_weight:
+        description: "hybrid core weight"
+        required: true
+        default: "0.70"
+      hybrid_satellite_weight:
+        description: "hybrid satellite weight"
+        required: true
+        default: "0.30"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+    outputs:
+      shard_count: ${{ steps.shard_plan.outputs.shard_count }}
+      shard_matrix: ${{ steps.shard_plan.outputs.shard_matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate repo layout
+        run: |
+          test -f scripts/download_prices.py
+          test -f scripts/run_grid_shard.py
+          test -f scripts/aggregate_results.py
+          test -f src/__init__.py
+          test -f src/core/execution.py
+          test -f src/core/grid.py
+          test -f src/core/metrics.py
+          test -f src/core/state.py
+          test -f src/engines/meta.py
+          test -f src/engines/branch5a.py
+          test -f config/grid_meta.yml
+          test -f config/grid_branch5a.yml
+
+      - name: Compute shard plan
+        id: shard_plan
+        env:
+          INPUT_SHARD_COUNT: ${{ inputs.shard_count }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          count = int(os.environ["INPUT_SHARD_COUNT"])
+          if count < 1 or count > 64:
+              raise SystemExit("shard_count must be between 1 and 64")
+
+          matrix = {
+              "engine": ["meta", "branch5a"],
+              "shard_idx": list(range(count)),
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"shard_count={count}\n")
+              f.write(f"shard_matrix={json.dumps(matrix, separators=(',', ':'))}\n")
+
+          print(json.dumps(matrix, ensure_ascii=False))
+          PY
+
+      - name: Download prices
+        run: |
+          mkdir -p data
+          python scripts/download_prices.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ inputs.end_date }}" \
+            --out-csv data/prices.csv
+
+      - name: Preview prices
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          px = pd.read_csv("data/prices.csv")
+          print(px.head(5).to_string(index=False))
+          print()
+          print(px.tail(5).to_string(index=False))
+          PY
+
+      - name: Upload price artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          if-no-files-found: error
+          path: data/prices.csv
+
+  run-shards:
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.shard_matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download price artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          path: data
+
+      - name: Run shard
+        run: |
+          if [ "${{ matrix.engine }}" = "meta" ]; then
+            GRID_YAML="${{ inputs.meta_grid_yaml }}"
+          else
+            GRID_YAML="${{ inputs.branch_grid_yaml }}"
+          fi
+
+          mkdir -p out
+
+          python scripts/run_grid_shard.py \
+            --engine "${{ matrix.engine }}" \
+            --grid-yaml "$GRID_YAML" \
+            --prices-csv data/prices.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ inputs.end_date }}" \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --shard-idx "${{ matrix.shard_idx }}" \
+            --shard-count "${{ needs.prepare.outputs.shard_count }}" \
+            --out-csv "out/grid_${{ matrix.engine }}_shard_${{ matrix.shard_idx }}.csv"
+
+      - name: Upload shard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.engine }}-${{ matrix.shard_idx }}-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            out/grid_${{ matrix.engine }}_shard_${{ matrix.shard_idx }}.csv
+            out/grid_${{ matrix.engine }}_shard_${{ matrix.shard_idx }}.json
+
+  aggregate:
+    needs: run-shards
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download all shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: shard-*-${{ github.run_id }}
+          merge-multiple: false
+
+      - name: Download price artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          path: data
+
+      - name: Aggregate and build best folders
+        run: |
+          mkdir -p out/aggregate
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml "${{ inputs.meta_grid_yaml }}" \
+            --branch-grid-yaml "${{ inputs.branch_grid_yaml }}" \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "${{ inputs.hybrid_core_weight }}" \
+            --hybrid-satellite-weight "${{ inputs.hybrid_satellite_weight }}" \
+            --hybrid-meta-topn "10" \
+            --hybrid-branch-topn "10" \
+            --hybrid-rebalance-modes "always,month_end" \
+            --hybrid-override-modes "none,meta_bear_crash_full"
+
+      - name: Show aggregate summary
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          print(pd.read_csv("out/aggregate/summary.csv").to_string(index=False))
+          print()
+          p = "out/aggregate/hybrid_candidates.csv"
+          try:
+              df = pd.read_csv(p)
+              print(df.head(20).to_string(index=False))
+          except FileNotFoundError:
+              print("hybrid_candidates.csv not found")
+          PY
+
+      - name: Upload aggregate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregate-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            out/aggregate/
