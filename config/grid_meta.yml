@@ -1,8 +1,4 @@
 portfolio:
-  - rebalance: weekly
-    when: week_end
-  - rebalance: biweekly
-    when: week_end
   - rebalance: monthly
     when: week_end
 
@@ -45,12 +41,8 @@ trend_engine:
     top_n: 1
     leverage_mode: mix_3x
   - candidates: [QQQ, SPY, SOXX]
-    mom_lookback_days: 100
-    top_n: 2
-    leverage_mode: mix_3x
-  - candidates: [QQQ, SPY, SOXX]
     mom_lookback_days: 130
-    top_n: 2
+    top_n: 1
     leverage_mode: mix_3x
 
 meanrev_engine:
@@ -84,18 +76,6 @@ allocator:
       trend: 0.0
       meanrev: 0.0
       defensive: 1.0
-    crash:
-      trend: 0.0
-      meanrev: 0.0
-      defensive: 1.0
-  - bull:
-      trend: 0.85
-      meanrev: 0.0
-      defensive: 0.15
-    bear:
-      trend: 0.20
-      meanrev: 0.0
-      defensive: 0.80
     crash:
       trend: 0.0
       meanrev: 0.0
@@ -160,22 +140,9 @@ soxx_admission_filter:
     ma50_days: 50
     replacement_if_blocked: SGOV_MIX
     apply_only_rank1: true
-  - enabled: true
-    ret20_positive_required: true
-    ret20_days: 20
-    ma20_above_ma50_required: true
-    ma20_days: 20
-    ma50_days: 50
-    replacement_if_blocked: SGOV_MIX
-    apply_only_rank1: true
 
 sgov_exit_assist:
   - enabled: false
-    apply_only_bull: true
-    qqq_ma_days: 20
-    spy_ma_days: 20
-    require_positive_mom: true
-  - enabled: true
     apply_only_bull: true
     qqq_ma_days: 20
     spy_ma_days: 20
@@ -192,12 +159,6 @@ vol_targeting:
     lookback_days: 20
     target_annual_vol: 0.55
     min_scale: 0.35
-    cash_asset: SGOV_MIX
-    annualization: 252
-  - enabled: true
-    lookback_days: 40
-    target_annual_vol: 0.45
-    min_scale: 0.30
     cash_asset: SGOV_MIX
     annualization: 252
 
