@@ -433,6 +433,9 @@ def build_hybrid_targets(
         if hybrid_override_mode == "meta_bear_crash_full" and state in {"BEAR", "CRASH"}:
             target_w = normalize_trade_weights(meta_targets.loc[dt].to_dict())
             override_hit = True
+        elif hybrid_override_mode == "meta_crash_full_only" and state == "CRASH":
+            target_w = normalize_trade_weights(meta_targets.loc[dt].to_dict())
+            override_hit = True
         else:
             override_hit = False
 
