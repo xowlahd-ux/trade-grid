@@ -202,20 +202,20 @@ jobs:
           name: prices-${{ github.run_id }}
           path: data
 
-      - name: Aggregate 40/60
+      - name: Aggregate 20/80
         run: |
-          mkdir -p out/aggregate_40_60
+          mkdir -p out/aggregate_20_80
           python scripts/aggregate_results.py \
             --input-dir artifacts \
-            --out-dir out/aggregate_40_60 \
+            --out-dir out/aggregate_20_80 \
             --prices-csv data/prices.csv \
             --meta-grid-yaml config/final_meta_baseline_fixed.yml \
             --branch-grid-yaml config/final_branch_baseline_fixed.yml \
             --execution-mode "${{ inputs.execution_mode }}" \
             --buy-cost "${{ inputs.buy_cost }}" \
             --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.40" \
-            --hybrid-satellite-weight "0.60" \
+            --hybrid-core-weight "0.20" \
+            --hybrid-satellite-weight "0.80" \
             --hybrid-meta-topn "1" \
             --hybrid-branch-topn "1" \
             --hybrid-rebalance-modes "always" \
@@ -227,20 +227,95 @@ jobs:
             --hybrid-vol-cash-asset "SGOV_MIX" \
             --hybrid-vol-annualization "252"
 
-      - name: Aggregate 42.5/57.5
+      - name: Aggregate 25/75
         run: |
-          mkdir -p out/aggregate_42p5_57p5
+          mkdir -p out/aggregate_25_75
           python scripts/aggregate_results.py \
             --input-dir artifacts \
-            --out-dir out/aggregate_42p5_57p5 \
+            --out-dir out/aggregate_25_75 \
             --prices-csv data/prices.csv \
             --meta-grid-yaml config/final_meta_baseline_fixed.yml \
             --branch-grid-yaml config/final_branch_baseline_fixed.yml \
             --execution-mode "${{ inputs.execution_mode }}" \
             --buy-cost "${{ inputs.buy_cost }}" \
             --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.425" \
-            --hybrid-satellite-weight "0.575" \
+            --hybrid-core-weight "0.25" \
+            --hybrid-satellite-weight "0.75" \
+            --hybrid-meta-topn "1" \
+            --hybrid-branch-topn "1" \
+            --hybrid-rebalance-modes "always" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Aggregate 30/70
+        run: |
+          mkdir -p out/aggregate_30_70
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate_30_70 \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
+            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.30" \
+            --hybrid-satellite-weight "0.70" \
+            --hybrid-meta-topn "1" \
+            --hybrid-branch-topn "1" \
+            --hybrid-rebalance-modes "always" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Aggregate 35/65
+        run: |
+          mkdir -p out/aggregate_35_65
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate_35_65 \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
+            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.35" \
+            --hybrid-satellite-weight "0.65" \
+            --hybrid-meta-topn "1" \
+            --hybrid-branch-topn "1" \
+            --hybrid-rebalance-modes "always" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Aggregate 40/60
+        run: |
+          mkdir -p out/aggregate
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
+            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.40" \
+            --hybrid-satellite-weight "0.60" \
             --hybrid-meta-topn "1" \
             --hybrid-branch-topn "1" \
             --hybrid-rebalance-modes "always" \
@@ -277,37 +352,12 @@ jobs:
             --hybrid-vol-cash-asset "SGOV_MIX" \
             --hybrid-vol-annualization "252"
 
-      - name: Aggregate 47.5/52.5
-        run: |
-          mkdir -p out/aggregate_47p5_52p5
-          python scripts/aggregate_results.py \
-            --input-dir artifacts \
-            --out-dir out/aggregate_47p5_52p5 \
-            --prices-csv data/prices.csv \
-            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
-            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
-            --execution-mode "${{ inputs.execution_mode }}" \
-            --buy-cost "${{ inputs.buy_cost }}" \
-            --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.475" \
-            --hybrid-satellite-weight "0.525" \
-            --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
-            --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "meta_bear_crash_full" \
-            --hybrid-vol-enabled "false" \
-            --hybrid-vol-lookback-days "20" \
-            --hybrid-vol-target-annual-vol "0.55" \
-            --hybrid-vol-min-scale "0.35" \
-            --hybrid-vol-cash-asset "SGOV_MIX" \
-            --hybrid-vol-annualization "252"
-
       - name: Aggregate 50/50
         run: |
-          mkdir -p out/aggregate
+          mkdir -p out/aggregate_50_50
           python scripts/aggregate_results.py \
             --input-dir artifacts \
-            --out-dir out/aggregate \
+            --out-dir out/aggregate_50_50 \
             --prices-csv data/prices.csv \
             --meta-grid-yaml config/final_meta_baseline_fixed.yml \
             --branch-grid-yaml config/final_branch_baseline_fixed.yml \
@@ -327,31 +377,6 @@ jobs:
             --hybrid-vol-cash-asset "SGOV_MIX" \
             --hybrid-vol-annualization "252"
 
-      - name: Aggregate 52.5/47.5
-        run: |
-          mkdir -p out/aggregate_52p5_47p5
-          python scripts/aggregate_results.py \
-            --input-dir artifacts \
-            --out-dir out/aggregate_52p5_47p5 \
-            --prices-csv data/prices.csv \
-            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
-            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
-            --execution-mode "${{ inputs.execution_mode }}" \
-            --buy-cost "${{ inputs.buy_cost }}" \
-            --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.525" \
-            --hybrid-satellite-weight "0.475" \
-            --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
-            --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "meta_bear_crash_full" \
-            --hybrid-vol-enabled "false" \
-            --hybrid-vol-lookback-days "20" \
-            --hybrid-vol-target-annual-vol "0.55" \
-            --hybrid-vol-min-scale "0.35" \
-            --hybrid-vol-cash-asset "SGOV_MIX" \
-            --hybrid-vol-annualization "252"
-
       - uses: actions/upload-artifact@v4
         with:
           name: aggregate-${{ github.run_id }}
@@ -359,8 +384,9 @@ jobs:
           compression-level: 0
           path: |
             out/aggregate/
-            out/aggregate_40_60/
-            out/aggregate_42p5_57p5/
+            out/aggregate_20_80/
+            out/aggregate_25_75/
+            out/aggregate_30_70/
+            out/aggregate_35_65/
             out/aggregate_45_55/
-            out/aggregate_47p5_52p5/
-            out/aggregate_52p5_47p5/
+            out/aggregate_50_50/
