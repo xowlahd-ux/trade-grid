@@ -21,30 +21,82 @@ def _extract_vol_targeting_block(cfg_or_block: dict[str, Any] | None) -> dict[st
     return dict(cfg_or_block)
 
 
+def disabled_vol_targeting_block(
+    *,
+    lookback_days: int = 20,
+    target_annual_vol: float = 1.0,
+    min_scale: float = 1.0,
+    max_scale: float = 1.0,
+    cash_asset: str = DEFAULT_CASH_ASSET,
+    risky_assets: list[str] | None = None,
+    annualization: int = 252,
+) -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "lookback_days": int(lookback_days),
+        "target_annual_vol": float(target_annual_vol),
+        "min_scale": float(min_scale),
+        "max_scale": float(max_scale),
+        "cash_asset": str(cash_asset),
+        "risky_assets": list(risky_assets or DEFAULT_RISKY_COLS),
+        "annualization": int(annualization),
+    }
+
+
 def merge_vol_targeting_blocks(*cfgs_or_blocks: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Legacy utility.
+
+    NOTE:
+    - This function no longer needs to be used for hybrid vol targeting.
+    - Hybrid vol targeting should be passed as an independent block from
+      aggregate_results.py.
+    - This function can still be used when the caller explicitly wants to
+      merge multiple vol-targeting configs into one conservative block.
+    """
     enabled_blocks: list[dict[str, Any]] = []
     fallback_cash = DEFAULT_CASH_ASSET
     fallback_risky = list(DEFAULT_RISKY_COLS)
+    fallback_lookback = 20
+    fallback_target_annual_vol = 1.0
+    fallback_min_scale = 1.0
+    fallback_max_scale = 1.0
+    fallback_annualization = 252
 
     for item in cfgs_or_blocks:
         block = _extract_vol_targeting_block(item)
+        if not block:
+            continue
+
         if block.get("cash_asset"):
             fallback_cash = str(block.get("cash_asset"))
         if block.get("risky_assets"):
             fallback_risky = [str(x) for x in block.get("risky_assets") if str(x)]
+
+        if "lookback_days" in block:
+            fallback_lookback = int(block.get("lookback_days", fallback_lookback))
+        if "target_annual_vol" in block:
+            fallback_target_annual_vol = float(block.get("target_annual_vol", fallback_target_annual_vol))
+        if "min_scale" in block:
+            fallback_min_scale = float(block.get("min_scale", fallback_min_scale))
+        if "max_scale" in block:
+            fallback_max_scale = float(block.get("max_scale", fallback_max_scale))
+        if "annualization" in block:
+            fallback_annualization = int(block.get("annualization", fallback_annualization))
+
         if bool(block.get("enabled", False)):
             enabled_blocks.append(block)
 
     if not enabled_blocks:
-        return {
-            "enabled": False,
-            "lookback_days": 20,
-            "target_annual_vol": 1.0,
-            "min_scale": 1.0,
-            "cash_asset": fallback_cash,
-            "risky_assets": fallback_risky,
-            "annualization": 252,
-        }
+        return disabled_vol_targeting_block(
+            lookback_days=fallback_lookback,
+            target_annual_vol=fallback_target_annual_vol,
+            min_scale=fallback_min_scale,
+            max_scale=fallback_max_scale,
+            cash_asset=fallback_cash,
+            risky_assets=fallback_risky,
+            annualization=fallback_annualization,
+        )
 
     target_annual_vol = min(float(b.get("target_annual_vol", 1.0)) for b in enabled_blocks)
     lookback_days = max(int(b.get("lookback_days", 20)) for b in enabled_blocks)
@@ -81,7 +133,10 @@ def _prepare_target_df(targets: pd.DataFrame) -> tuple[pd.DataFrame, bool]:
     return df, had_date_col
 
 
-def _rolling_var_cov_components(rets: pd.DataFrame, lookback_days: int) -> tuple[pd.DataFrame, dict[tuple[str, str], pd.Series]]:
+def _rolling_var_cov_components(
+    rets: pd.DataFrame,
+    lookback_days: int,
+) -> tuple[pd.DataFrame, dict[tuple[str, str], pd.Series]]:
     vars_df = rets.rolling(lookback_days, min_periods=lookback_days).var(ddof=0).shift(1)
     covs: dict[tuple[str, str], pd.Series] = {}
     cols = list(rets.columns)
@@ -149,6 +204,7 @@ def apply_vol_targeting(
 
         port_var = 0.0
         missing_stat = False
+
         for a in risky_assets:
             var_val = vars_df.loc[dt, a]
             if pd.isna(var_val):
