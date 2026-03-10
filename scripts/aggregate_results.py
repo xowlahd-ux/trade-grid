@@ -430,15 +430,72 @@ def build_hybrid_targets(
     for dt in idx:
         state = str(meta_state.loc[dt]).upper()
 
+        override_hit = False
+
         if hybrid_override_mode == "meta_bear_crash_full" and state in {"BEAR", "CRASH"}:
             target_w = normalize_trade_weights(meta_targets.loc[dt].to_dict())
             override_hit = True
+
         elif hybrid_override_mode == "meta_crash_full_only" and state == "CRASH":
             target_w = normalize_trade_weights(meta_targets.loc[dt].to_dict())
             override_hit = True
-        else:
-            override_hit = False
 
+        elif hybrid_override_mode == "meta_bear_partial_crash_full":
+            if state == "CRASH":
+                target_w = normalize_trade_weights(meta_targets.loc[dt].to_dict())
+                override_hit = True
+            elif state == "BEAR":
+                if hybrid_rebalance_mode == "always":
+                    cap_meta_target = float(core_weight)
+                    cap_branch_target = float(satellite_weight)
+                elif hybrid_rebalance_mode == "month_end":
+                    cap_meta_target = float(cap_meta)
+                    cap_branch_target = float(cap_branch)
+                    total = cap_meta_target + cap_branch_target
+                    if total <= 0:
+                        cap_meta_target = float(core_weight)
+                        cap_branch_target = float(satellite_weight)
+                    else:
+                        cap_meta_target /= total
+                        cap_branch_target /= total
+                else:
+                    raise ValueError(f"unsupported hybrid_rebalance_mode: {hybrid_rebalance_mode}")
+
+                # branch 비중을 절반만 반영하고, 줄어든 만큼 meta로 이동
+                bear_branch_scale = 0.5
+                cap_branch_partial = cap_branch_target * bear_branch_scale
+                cap_meta_partial = 1.0 - cap_branch_partial
+
+                target_w = {
+                    c: cap_meta_partial * float(meta_targets.loc[dt, c]) + cap_branch_partial * float(branch_targets.loc[dt, c])
+                    for c in TRADE_COLS
+                }
+                target_w = normalize_trade_weights(target_w)
+                override_hit = True
+            else:
+                if hybrid_rebalance_mode == "always":
+                    cap_meta_target = float(core_weight)
+                    cap_branch_target = float(satellite_weight)
+                elif hybrid_rebalance_mode == "month_end":
+                    cap_meta_target = float(cap_meta)
+                    cap_branch_target = float(cap_branch)
+                    total = cap_meta_target + cap_branch_target
+                    if total <= 0:
+                        cap_meta_target = float(core_weight)
+                        cap_branch_target = float(satellite_weight)
+                    else:
+                        cap_meta_target /= total
+                        cap_branch_target /= total
+                else:
+                    raise ValueError(f"unsupported hybrid_rebalance_mode: {hybrid_rebalance_mode}")
+
+                target_w = {
+                    c: cap_meta_target * float(meta_targets.loc[dt, c]) + cap_branch_target * float(branch_targets.loc[dt, c])
+                    for c in TRADE_COLS
+                }
+                target_w = normalize_trade_weights(target_w)
+
+        else:
             if hybrid_rebalance_mode == "always":
                 cap_meta_target = float(core_weight)
                 cap_branch_target = float(satellite_weight)
@@ -488,7 +545,6 @@ def build_hybrid_targets(
             cap_branch = float(satellite_weight)
 
     return pd.DataFrame(rows)
-
 
 def evaluate_hybrid_combo(
     *,
