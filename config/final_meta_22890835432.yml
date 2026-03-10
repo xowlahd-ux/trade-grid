@@ -35,7 +35,7 @@ meanrev_engine:
   stop_loss: -0.08
   candidates:
     - [QQQ, SPY, SOXX]
-  base: SPY
+  base: [SPY]
 
 allocator:
   bull:
