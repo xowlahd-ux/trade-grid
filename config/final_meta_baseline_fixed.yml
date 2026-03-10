@@ -83,6 +83,48 @@ recovery_boost:
     from_assets: [SGOV_MIX, QLD_MIX]
     to_asset: TQQQ_MIX
 
+  - enabled: true
+    dd_enter: -0.20
+    qqq_ma_days: 20
+    qqq_mom_days: 20
+    from_assets: [SGOV_MIX, QLD_MIX]
+    to_asset: QLD_MIX
+
+  - enabled: true
+    dd_enter: -0.18
+    qqq_ma_days: 20
+    qqq_mom_days: 20
+    from_assets: [SGOV_MIX, QLD_MIX]
+    to_asset: QLD_MIX
+
+  - enabled: true
+    dd_enter: -0.16
+    qqq_ma_days: 20
+    qqq_mom_days: 20
+    from_assets: [SGOV_MIX, QLD_MIX]
+    to_asset: QLD_MIX
+
+  - enabled: true
+    dd_enter: -0.20
+    qqq_ma_days: 20
+    qqq_mom_days: 20
+    from_assets: [SGOV_MIX, QLD_MIX]
+    to_asset: TQQQ_MIX
+
+  - enabled: true
+    dd_enter: -0.18
+    qqq_ma_days: 20
+    qqq_mom_days: 20
+    from_assets: [SGOV_MIX, QLD_MIX]
+    to_asset: TQQQ_MIX
+
+  - enabled: true
+    dd_enter: -0.16
+    qqq_ma_days: 20
+    qqq_mom_days: 20
+    from_assets: [SGOV_MIX, QLD_MIX]
+    to_asset: TQQQ_MIX
+
 soxx_admission_filter:
   - enabled: false
     ret20_positive_required: true
