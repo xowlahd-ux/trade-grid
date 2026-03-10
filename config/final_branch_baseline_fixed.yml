@@ -1,6 +1,6 @@
 lookback: [120, 125, 126, 130]
 rebalance: [monthly]
-top1_weight: [0.48, 0.50, 0.52]
+top1_weight: [0.40, 0.42, 0.45, 0.48, 0.50, 0.52]
 
 vol_targeting:
   - enabled: false
