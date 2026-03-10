@@ -224,7 +224,7 @@ jobs:
             --hybrid-meta-topn "1" \
             --hybrid-branch-topn "1" \
             --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "none,meta_bear_crash_full" \
+            --hybrid-override-modes "meta_bear_crash_full,meta_crash_full_only" \
             --hybrid-vol-enabled "false" \
             --hybrid-vol-lookback-days "20" \
             --hybrid-vol-target-annual-vol "0.55" \
@@ -246,7 +246,7 @@ jobs:
             --hybrid-meta-topn "1" \
             --hybrid-branch-topn "1" \
             --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "none,meta_bear_crash_full" \
+            --hybrid-override-modes "meta_bear_crash_full,meta_crash_full_only" \
             --hybrid-vol-enabled "false" \
             --hybrid-vol-lookback-days "20" \
             --hybrid-vol-target-annual-vol "0.55" \
@@ -268,7 +268,7 @@ jobs:
             --hybrid-meta-topn "1" \
             --hybrid-branch-topn "1" \
             --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "none,meta_bear_crash_full" \
+            --hybrid-override-modes "meta_bear_crash_full,meta_crash_full_only" \
             --hybrid-vol-enabled "false" \
             --hybrid-vol-lookback-days "20" \
             --hybrid-vol-target-annual-vol "0.55" \
