@@ -14,7 +14,7 @@ from pandas.errors import EmptyDataError
 from src.core.execution import simulate_execution
 from src.core.grid import expand_grid
 from src.core.metrics import compute_metrics, compute_selection_score, compute_trailing_10y_metrics
-from src.core.vol_targeting import apply_vol_targeting, merge_vol_targeting_blocks
+from src.core.vol_targeting import apply_vol_targeting
 from src.engines.branch5a import build_branch5a_targets
 from src.engines.meta import run_meta_portfolio
 
@@ -152,6 +152,39 @@ def hybrid_engine_name(core_weight: float, satellite_weight: float) -> str:
     return f"hybrid_{_weight_token(core_weight)}_{_weight_token(satellite_weight)}"
 
 
+def str2bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"invalid boolean value: {value}")
+
+
+def build_hybrid_vol_block_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    enabled = bool(args.hybrid_vol_enabled)
+    if not enabled:
+        return {
+            "enabled": False,
+            "lookback_days": int(args.hybrid_vol_lookback_days),
+            "target_annual_vol": float(args.hybrid_vol_target_annual_vol),
+            "min_scale": float(args.hybrid_vol_min_scale),
+            "cash_asset": str(args.hybrid_vol_cash_asset),
+            "annualization": int(args.hybrid_vol_annualization),
+        }
+
+    return {
+        "enabled": True,
+        "lookback_days": int(args.hybrid_vol_lookback_days),
+        "target_annual_vol": float(args.hybrid_vol_target_annual_vol),
+        "min_scale": float(args.hybrid_vol_min_scale),
+        "cash_asset": str(args.hybrid_vol_cash_asset),
+        "annualization": int(args.hybrid_vol_annualization),
+    }
+
+
 def build_meta_result(
     *,
     combo_idx: int,
@@ -172,7 +205,10 @@ def build_meta_result(
     )
 
     target_aligned = align_target_df(target_df, prices.index)
-    target_aligned = align_target_df(apply_vol_targeting(prices=prices, targets=target_aligned, cfg_or_block=one_cfg), prices.index)
+    target_aligned = align_target_df(
+        apply_vol_targeting(prices=prices, targets=target_aligned, cfg_or_block=one_cfg),
+        prices.index,
+    )
 
     exec_equity = simulate_execution(
         prices=prices,
@@ -214,7 +250,10 @@ def build_branch_result(
 
     targets = build_branch5a_targets(prices.copy(), one_cfg).copy()
     target_aligned = align_target_df(targets, prices.index)
-    target_aligned = align_target_df(apply_vol_targeting(prices=prices, targets=target_aligned, cfg_or_block=one_cfg), prices.index)
+    target_aligned = align_target_df(
+        apply_vol_targeting(prices=prices, targets=target_aligned, cfg_or_block=one_cfg),
+        prices.index,
+    )
 
     equity = simulate_execution(
         prices=prices,
@@ -260,7 +299,9 @@ def save_meta_folder(
                 "recent10y_mdd": recent10["mdd"],
                 "recent10y_max_recovery_days": recent10["max_recovery_days"],
                 "recent10y_seed_multiple": recent10["seed_multiple"],
-                "recent10y_selection_score": compute_selection_score(recent10["cagr"], recent10["mdd"], recent10["max_recovery_days"]),
+                "recent10y_selection_score": compute_selection_score(
+                    recent10["cagr"], recent10["mdd"], recent10["max_recovery_days"]
+                ),
                 **{f"param::{k}": serialize_param_value(v) for k, v in result["params"].items()},
             }
         ]
@@ -322,7 +363,9 @@ def save_branch_folder(
                 "recent10y_mdd": recent10["mdd"],
                 "recent10y_max_recovery_days": recent10["max_recovery_days"],
                 "recent10y_seed_multiple": recent10["seed_multiple"],
-                "recent10y_selection_score": compute_selection_score(recent10["cagr"], recent10["mdd"], recent10["max_recovery_days"]),
+                "recent10y_selection_score": compute_selection_score(
+                    recent10["cagr"], recent10["mdd"], recent10["max_recovery_days"]
+                ),
                 **{f"param::{k}": serialize_param_value(v) for k, v in result["params"].items()},
             }
         ]
@@ -457,6 +500,7 @@ def evaluate_hybrid_combo(
     hybrid_rebalance_mode: str,
     hybrid_override_mode: str,
     hybrid_name: str,
+    hybrid_vol_block: dict[str, Any],
 ) -> tuple[pd.Series, pd.DataFrame, dict[str, Any]]:
     idx = prices.index.intersection(meta_result["equity"].index).intersection(branch_result["equity"].index)
 
@@ -473,12 +517,19 @@ def evaluate_hybrid_combo(
         hybrid_override_mode=hybrid_override_mode,
     )
 
-    hybrid_vol_block = merge_vol_targeting_blocks(meta_result.get("config"), branch_result.get("config"))
-    hybrid_targets = apply_vol_targeting(prices=prices.loc[idx], targets=hybrid_targets.copy(), cfg_or_block=hybrid_vol_block)
+    hybrid_targets = align_target_df(hybrid_targets, idx)
+
+    if bool(hybrid_vol_block.get("enabled", False)):
+        hybrid_targets = apply_vol_targeting(
+            prices=prices.loc[idx],
+            targets=hybrid_targets.copy(),
+            cfg_or_block=hybrid_vol_block,
+        )
+        hybrid_targets = align_target_df(hybrid_targets, idx)
 
     hybrid_equity = simulate_execution(
         prices=prices.loc[idx],
-        targets=hybrid_targets.copy(),
+        targets=hybrid_targets.reset_index().rename(columns={"index": "date"}),
         buy_cost=buy_cost,
         sell_cost=sell_cost,
         mode=execution_mode,
@@ -514,6 +565,8 @@ def evaluate_hybrid_combo(
         "hybrid_vol_target_annual_vol": float(hybrid_vol_block.get("target_annual_vol", 0.0)),
         "hybrid_vol_target_lookback_days": int(hybrid_vol_block.get("lookback_days", 0)),
         "hybrid_vol_target_min_scale": float(hybrid_vol_block.get("min_scale", 0.0)),
+        "hybrid_vol_target_cash_asset": str(hybrid_vol_block.get("cash_asset", "SGOV_MIX")),
+        "hybrid_vol_target_annualization": int(hybrid_vol_block.get("annualization", 252)),
     }
 
     return hybrid_equity, hybrid_targets, row
@@ -560,6 +613,8 @@ def save_hybrid_folder(
                 "target_annual_vol": float(row.get("hybrid_vol_target_annual_vol", 0.0)),
                 "lookback_days": int(row.get("hybrid_vol_target_lookback_days", 0)),
                 "min_scale": float(row.get("hybrid_vol_target_min_scale", 0.0)),
+                "cash_asset": str(row.get("hybrid_vol_target_cash_asset", "SGOV_MIX")),
+                "annualization": int(row.get("hybrid_vol_target_annualization", 252)),
             },
             "meta_combo_idx": meta_result["combo_idx"],
             "meta_params": meta_result["params"],
@@ -585,6 +640,15 @@ def main() -> None:
     parser.add_argument("--hybrid-branch-topn", type=int, default=10)
     parser.add_argument("--hybrid-rebalance-modes", default="always,month_end")
     parser.add_argument("--hybrid-override-modes", default="none,meta_bear_crash_full")
+
+    # NEW: hybrid vol targeting is now independent from meta/branch
+    parser.add_argument("--hybrid-vol-enabled", type=str2bool, default=False)
+    parser.add_argument("--hybrid-vol-lookback-days", type=int, default=20)
+    parser.add_argument("--hybrid-vol-target-annual-vol", type=float, default=0.55)
+    parser.add_argument("--hybrid-vol-min-scale", type=float, default=0.35)
+    parser.add_argument("--hybrid-vol-cash-asset", default="SGOV_MIX")
+    parser.add_argument("--hybrid-vol-annualization", type=int, default=252)
+
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -595,6 +659,8 @@ def main() -> None:
         core_weight=float(args.hybrid_core_weight),
         satellite_weight=float(args.hybrid_satellite_weight),
     )
+
+    hybrid_vol_block = build_hybrid_vol_block_from_args(args)
 
     prices = pd.read_csv(args.prices_csv, index_col=0, parse_dates=True).sort_index()
     prices.index = pd.to_datetime(prices.index)
@@ -733,6 +799,7 @@ def main() -> None:
                     hybrid_rebalance_mode=reb_mode,
                     hybrid_override_mode=ov_mode,
                     hybrid_name=hybrid_name,
+                    hybrid_vol_block=hybrid_vol_block,
                 )
                 hybrid_rows.append(row)
 
@@ -740,7 +807,11 @@ def main() -> None:
                     best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)
                 else:
                     _, _, best_row, _, _ = best_payload
-                    if (row["selection_score"], row["cagr"], row["mdd"]) > (best_row["selection_score"], best_row["cagr"], best_row["mdd"]):
+                    if (row["selection_score"], row["cagr"], row["mdd"]) > (
+                        best_row["selection_score"],
+                        best_row["cagr"],
+                        best_row["mdd"],
+                    ):
                         best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)
 
                 done += 1
@@ -748,10 +819,13 @@ def main() -> None:
                     f"[hybrid-search] {done}/{total_combos} "
                     f"meta={m_idx} branch={b_idx} "
                     f"rebalance={reb_mode} override={ov_mode} "
-                    f"score={row['selection_score']:.6f} cagr={row['cagr']:.6f} mdd={row['mdd']:.6f}"
+                    f"score={row['selection_score']:.6f} cagr={row['cagr']:.6f} mdd={row['mdd']:.6f} "
+                    f"hybrid_vol_enabled={row['hybrid_vol_target_enabled']}"
                 )
 
-    hybrid_candidates = pd.DataFrame(hybrid_rows).sort_values(["selection_score", "cagr", "mdd"], ascending=[False, False, False]).reset_index(drop=True)
+    hybrid_candidates = pd.DataFrame(hybrid_rows).sort_values(
+        ["selection_score", "cagr", "mdd"], ascending=[False, False, False]
+    ).reset_index(drop=True)
     hybrid_candidates.to_csv(out_dir / "hybrid_candidates.csv", index=False)
 
     if best_payload is None:
