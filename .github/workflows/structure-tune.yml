@@ -202,12 +202,87 @@ jobs:
           name: prices-${{ github.run_id }}
           path: data
 
-      - name: Aggregate 20/80
+      - name: Aggregate 5/95
         run: |
-          mkdir -p out/aggregate_20_80
+          mkdir -p out/aggregate_5_95
           python scripts/aggregate_results.py \
             --input-dir artifacts \
-            --out-dir out/aggregate_20_80 \
+            --out-dir out/aggregate_5_95 \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
+            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.05" \
+            --hybrid-satellite-weight "0.95" \
+            --hybrid-meta-topn "1" \
+            --hybrid-branch-topn "1" \
+            --hybrid-rebalance-modes "always" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Aggregate 10/90
+        run: |
+          mkdir -p out/aggregate_10_90
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate_10_90 \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
+            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.10" \
+            --hybrid-satellite-weight "0.90" \
+            --hybrid-meta-topn "1" \
+            --hybrid-branch-topn "1" \
+            --hybrid-rebalance-modes "always" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Aggregate 15/85
+        run: |
+          mkdir -p out/aggregate_15_85
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate_15_85 \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
+            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.15" \
+            --hybrid-satellite-weight "0.85" \
+            --hybrid-meta-topn "1" \
+            --hybrid-branch-topn "1" \
+            --hybrid-rebalance-modes "always" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Aggregate 20/80
+        run: |
+          mkdir -p out/aggregate
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate \
             --prices-csv data/prices.csv \
             --meta-grid-yaml config/final_meta_baseline_fixed.yml \
             --branch-grid-yaml config/final_branch_baseline_fixed.yml \
@@ -304,10 +379,10 @@ jobs:
 
       - name: Aggregate 40/60
         run: |
-          mkdir -p out/aggregate
+          mkdir -p out/aggregate_40_60
           python scripts/aggregate_results.py \
             --input-dir artifacts \
-            --out-dir out/aggregate \
+            --out-dir out/aggregate_40_60 \
             --prices-csv data/prices.csv \
             --meta-grid-yaml config/final_meta_baseline_fixed.yml \
             --branch-grid-yaml config/final_branch_baseline_fixed.yml \
@@ -384,9 +459,12 @@ jobs:
           compression-level: 0
           path: |
             out/aggregate/
-            out/aggregate_20_80/
+            out/aggregate_5_95/
+            out/aggregate_10_90/
+            out/aggregate_15_85/
             out/aggregate_25_75/
             out/aggregate_30_70/
             out/aggregate_35_65/
+            out/aggregate_40_60/
             out/aggregate_45_55/
             out/aggregate_50_50/
