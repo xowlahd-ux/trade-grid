@@ -6,7 +6,7 @@ on:
       start_date:
         description: "YYYY-MM-DD"
         required: true
-        default: "2010-01-01"
+        default: "2000-01-01"
       end_date:
         description: "YYYY-MM-DD or latest"
         required: true
@@ -14,7 +14,7 @@ on:
       execution_mode:
         description: "mode1 or mode2"
         required: true
-        default: "mode1"
+        default: "mode2"
       buy_cost:
         description: "buy cost fraction"
         required: true
