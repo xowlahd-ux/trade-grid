@@ -1,0 +1,113 @@
+portfolio:
+  rebalance: monthly
+  when: week_end
+
+state:
+  base_ticker: SPY
+  ma_days: 150
+  min_hold_days: 11
+
+crash:
+  enabled: true
+  lookback_days: 12
+  threshold: -0.10
+  fast:
+    enabled: true
+    lookback_days: 6
+    threshold: -0.06
+
+bear_fast:
+  enabled: true
+  lookback_days: 4
+  threshold: -0.06
+
+trend_engine:
+  candidates: [QQQ, SPY, SOXX]
+  mom_lookback_days: 100
+  top_n: 1
+  leverage_mode: mix_3x
+
+meanrev_engine:
+  lookback_days: 20
+  drop_threshold: -0.12
+  hold_days: 5
+  take_profit: 0.08
+  stop_loss: -0.08
+  candidates:
+    - [QQQ, SPY, SOXX]
+  base: SPY
+
+allocator:
+  bull:
+    trend: 1.0
+    meanrev: 0.0
+    defensive: 0.0
+  bear:
+    trend: 0.0
+    meanrev: 0.0
+    defensive: 1.0
+  crash:
+    trend: 0.0
+    meanrev: 0.0
+    defensive: 1.0
+
+risk_off:
+  mode: SGOV_100
+
+soxx_gate:
+  enabled: true
+  mode: mom
+  mom_lookback_days: 45
+  mom_threshold: 0.0
+  ma_days: 50
+
+asset_crash:
+  SPY:
+    enabled: false
+    lookback_days: 6
+    threshold: -0.06
+  QQQ:
+    enabled: false
+    lookback_days: 6
+    threshold: -0.06
+  SOXX:
+    enabled: false
+    lookback_days: 4
+    threshold: -0.09
+
+recovery_boost:
+  enabled: false
+  dd_enter: -0.20
+  qqq_ma_days: 20
+  qqq_mom_days: 20
+  from_assets: [SGOV_MIX, QLD_MIX]
+  to_asset: TQQQ_MIX
+
+soxx_admission_filter:
+  enabled: false
+  ret20_positive_required: true
+  ret20_days: 20
+  ma20_above_ma50_required: true
+  ma20_days: 20
+  ma50_days: 50
+  replacement_if_blocked: SGOV_MIX
+  apply_only_rank1: true
+
+sgov_exit_assist:
+  enabled: false
+  apply_only_bull: false
+  qqq_ma_days: 50
+  spy_ma_days: 50
+  require_positive_mom: false
+
+vol_targeting:
+  enabled: false
+  lookback_days: 20
+  target_annual_vol: 0.60
+  min_scale: 1.00
+  cash_asset: SGOV_MIX
+  annualization: 252
+
+costs:
+  buy: 0.002
+  sell: 0.002
