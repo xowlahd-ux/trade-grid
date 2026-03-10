@@ -39,9 +39,9 @@ meanrev_engine:
 
 allocator:
   - bull:
-      trend: 0.0
+      trend: 1.0
       meanrev: 0.0
-      defensive: 1.0
+      defensive: 0.0
     bear:
       trend: 0.0
       meanrev: 0.0
@@ -55,7 +55,7 @@ risk_off:
   - mode: SGOV_100
 
 soxx_gate:
-  - enabled: false
+  - enabled: true
     mode: mom
     mom_lookback_days: 45
     mom_threshold: 0.0
