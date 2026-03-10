@@ -99,14 +99,31 @@ jobs:
           INPUT_SHARD_COUNT: ${{ inputs.shard_count }}
           INPUT_MAX_PARALLEL: ${{ inputs.max_parallel }}
         run: |
-          python -c "import json, os; count=int(os.environ['INPUT_SHARD_COUNT']); mp=int(os.environ['INPUT_MAX_PARALLEL']); \
-          if count < 1 or count > 8: raise SystemExit('shard_count must be between 1 and 8'); \
-          if mp < 1 or mp > 4: raise SystemExit('max_parallel must be between 1 and 4'); \
-          mp=min(mp, count * 2); \
-          matrix={'engine':['meta','branch5a'],'shard_idx':list(range(count))}; \
-          out=os.environ['GITHUB_OUTPUT']; \
-          open(out,'a',encoding='utf-8').write(f'shard_count={count}\nmax_parallel={mp}\nshard_matrix={json.dumps(matrix,separators=(\",\",\":\"))}\n'); \
-          print(json.dumps({'shard_count':count,'max_parallel':mp,'matrix':matrix}, ensure_ascii=False))"
+          count="${INPUT_SHARD_COUNT}"
+          mp="${INPUT_MAX_PARALLEL}"
+
+          if [ "$count" -lt 1 ] || [ "$count" -gt 8 ]; then
+            echo "shard_count must be between 1 and 8"
+            exit 1
+          fi
+
+          if [ "$mp" -lt 1 ] || [ "$mp" -gt 4 ]; then
+            echo "max_parallel must be between 1 and 4"
+            exit 1
+          fi
+
+          if [ "$mp" -gt "$count" ]; then
+            mp="$count"
+          fi
+
+          echo "shard_count=$count" >> "$GITHUB_OUTPUT"
+          echo "max_parallel=$mp" >> "$GITHUB_OUTPUT"
+          echo "shard_matrix={\"engine\":[\"meta\",\"branch5a\"],\"shard_idx\":[$(seq -s, 0 $((count-1)))]}" >> "$GITHUB_OUTPUT"
+
+          echo "Computed shard plan:"
+          echo "  shard_count=$count"
+          echo "  max_parallel=$mp"
+          echo "  shard_matrix={\"engine\":[\"meta\",\"branch5a\"],\"shard_idx\":[$(seq -s, 0 $((count-1)))]}"
 
       - name: Download prices
         run: |
