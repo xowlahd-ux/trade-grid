@@ -1,4 +1,4 @@
-name: grid-parallel-meta-branch5a-safe
+name: grid-parallel-meta-branch5a-safe-recent10y
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       start_date:
         description: "YYYY-MM-DD"
         required: true
-        default: "2000-01-01"
+        default: "2010-01-01"
       end_date:
         description: "YYYY-MM-DD or latest"
         required: true
@@ -14,7 +14,7 @@ on:
       execution_mode:
         description: "mode1 or mode2"
         required: true
-        default: "mode2"
+        default: "mode1"
       buy_cost:
         description: "buy cost fraction"
         required: true
@@ -90,8 +90,8 @@ jobs:
           test -f src/core/state.py
           test -f src/engines/meta.py
           test -f src/engines/branch5a.py
-          test -f config/grid_meta.yml
-          test -f config/grid_branch5a.yml
+          test -f "${{ inputs.meta_grid_yaml }}"
+          test -f "${{ inputs.branch_grid_yaml }}"
 
       - name: Compute shard plan
         id: shard_plan
@@ -229,6 +229,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Patch aggregate selection basis to recent10y_cagr
+        run: |
+          python -c "from pathlib import Path; p=Path('scripts/aggregate_results.py'); s=p.read_text(encoding='utf-8'); s=s.replace('''    meta_rows = meta_rows.sort_values([\"selection_score\", \"cagr\", \"mdd\"], ascending=[False, False, False]).reset_index(drop=True)\n    branch_rows = branch_rows.sort_values([\"selection_score\", \"cagr\", \"mdd\"], ascending=[False, False, False]).reset_index(drop=True)\n''','''    if \"recent10y_selection_score\" not in all_df.columns:\n        all_df[\"recent10y_selection_score\"] = all_df.apply(\n            lambda r: compute_selection_score(r[\"recent10y_cagr\"], r[\"recent10y_mdd\"], int(r.get(\"recent10y_max_recovery_days\", 0))),\n            axis=1,\n        )\n\n    meta_rows = meta_rows.sort_values(\n        [\"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"],\n        ascending=[False, False, False, False],\n    ).reset_index(drop=True)\n    branch_rows = branch_rows.sort_values(\n        [\"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"],\n        ascending=[False, False, False, False],\n    ).reset_index(drop=True)\n'''); s=s.replace('''    top50_by_score = (\n        all_df.sort_values([\"engine\", \"selection_score\", \"cagr\", \"mdd\"], ascending=[True, False, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_cagr = (\n        all_df.sort_values([\"engine\", \"cagr\", \"mdd\"], ascending=[True, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_mdd = (\n        all_df.sort_values([\"engine\", \"mdd\", \"cagr\"], ascending=[True, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_score.to_csv(out_dir / \"top50_by_score.csv\", index=False)\n    top50_by_cagr.to_csv(out_dir / \"top50_by_cagr.csv\", index=False)\n    top50_by_mdd.to_csv(out_dir / \"top50_by_mdd.csv\", index=False)\n''','''    top50_by_score = (\n        all_df.sort_values([\"engine\", \"selection_score\", \"cagr\", \"mdd\"], ascending=[True, False, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_cagr = (\n        all_df.sort_values([\"engine\", \"cagr\", \"mdd\"], ascending=[True, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_recent10y_cagr = (\n        all_df.sort_values([\"engine\", \"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"], ascending=[True, False, False, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_mdd = (\n        all_df.sort_values([\"engine\", \"mdd\", \"cagr\"], ascending=[True, False, False])\n        .groupby(\"engine\", as_index=False)\n        .head(50)\n    )\n    top50_by_score.to_csv(out_dir / \"top50_by_score.csv\", index=False)\n    top50_by_cagr.to_csv(out_dir / \"top50_by_cagr.csv\", index=False)\n    top50_by_recent10y_cagr.to_csv(out_dir / \"top50_by_recent10y_cagr.csv\", index=False)\n    top50_by_mdd.to_csv(out_dir / \"top50_by_mdd.csv\", index=False)\n'''); s=s.replace('''                    if (row[\"selection_score\"], row[\"cagr\"], row[\"mdd\"]) > (best_row[\"selection_score\"], best_row[\"cagr\"], best_row[\"mdd\"]):\n                        best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)\n''','''                    if (\n                        row[\"recent10y_cagr\"],\n                        row[\"recent10y_selection_score\"],\n                        row[\"recent10y_mdd\"],\n                        row[\"cagr\"],\n                    ) > (\n                        best_row[\"recent10y_cagr\"],\n                        best_row[\"recent10y_selection_score\"],\n                        best_row[\"recent10y_mdd\"],\n                        best_row[\"cagr\"],\n                    ):\n                        best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)\n'''); s=s.replace('''                    f\"score={row['selection_score']:.6f} cagr={row['cagr']:.6f} mdd={row['mdd']:.6f}\"\n''','''                    f\"recent10y_cagr={row['recent10y_cagr']:.6f} \"\n                    f\"recent10y_score={row['recent10y_selection_score']:.6f} \"\n                    f\"cagr={row['cagr']:.6f} mdd={row['mdd']:.6f}\"\n'''); s=s.replace('''    hybrid_candidates = pd.DataFrame(hybrid_rows).sort_values([\"selection_score\", \"cagr\", \"mdd\"], ascending=[False, False, False]).reset_index(drop=True)\n''','''    hybrid_candidates = pd.DataFrame(hybrid_rows).sort_values(\n        [\"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"],\n        ascending=[False, False, False, False],\n    ).reset_index(drop=True)\n'''); s=s.replace('''        {\n            \"engine\": \"meta\",\n            \"rows\": int(len(meta_rows)),\n            \"best_score\": float(meta_rows.iloc[0][\"selection_score\"]),\n            \"best_cagr\": float(meta_rows.iloc[0][\"cagr\"]),\n            \"best_mdd\": float(meta_rows.iloc[0][\"mdd\"]),\n            \"worst_mdd\": float(meta_rows[\"mdd\"].min()),\n        },\n        {\n            \"engine\": \"branch5a\",\n            \"rows\": int(len(branch_rows)),\n            \"best_score\": float(branch_rows.iloc[0][\"selection_score\"]),\n            \"best_cagr\": float(branch_rows.iloc[0][\"cagr\"]),\n            \"best_mdd\": float(branch_rows.iloc[0][\"mdd\"]),\n            \"worst_mdd\": float(branch_rows[\"mdd\"].min()),\n        },\n        {\n            \"engine\": hybrid_name,\n            \"rows\": int(len(hybrid_candidates)),\n            \"best_score\": float(best_hybrid_row[\"selection_score\"]),\n            \"best_cagr\": float(best_hybrid_row[\"cagr\"]),\n            \"best_mdd\": float(best_hybrid_row[\"mdd\"]),\n            \"worst_mdd\": float(hybrid_candidates[\"mdd\"].min()),\n        },\n''','''        {\n            \"engine\": \"meta\",\n            \"rows\": int(len(meta_rows)),\n            \"selection_basis\": \"recent10y_cagr\",\n            \"best_score\": float(meta_rows.iloc[0][\"selection_score\"]),\n            \"best_recent10y_score\": float(meta_rows.iloc[0][\"recent10y_selection_score\"]),\n            \"best_recent10y_cagr\": float(meta_rows.iloc[0][\"recent10y_cagr\"]),\n            \"best_recent10y_mdd\": float(meta_rows.iloc[0][\"recent10y_mdd\"]),\n            \"best_cagr\": float(meta_rows.iloc[0][\"cagr\"]),\n            \"best_mdd\": float(meta_rows.iloc[0][\"mdd\"]),\n            \"worst_mdd\": float(meta_rows[\"mdd\"].min()),\n        },\n        {\n            \"engine\": \"branch5a\",\n            \"rows\": int(len(branch_rows)),\n            \"selection_basis\": \"recent10y_cagr\",\n            \"best_score\": float(branch_rows.iloc[0][\"selection_score\"]),\n            \"best_recent10y_score\": float(branch_rows.iloc[0][\"recent10y_selection_score\"]),\n            \"best_recent10y_cagr\": float(branch_rows.iloc[0][\"recent10y_cagr\"]),\n            \"best_recent10y_mdd\": float(branch_rows.iloc[0][\"recent10y_mdd\"]),\n            \"best_cagr\": float(branch_rows.iloc[0][\"cagr\"]),\n            \"best_mdd\": float(branch_rows.iloc[0][\"mdd\"]),\n            \"worst_mdd\": float(branch_rows[\"mdd\"].min()),\n        },\n        {\n            \"engine\": hybrid_name,\n            \"rows\": int(len(hybrid_candidates)),\n            \"selection_basis\": \"recent10y_cagr\",\n            \"best_score\": float(best_hybrid_row[\"selection_score\"]),\n            \"best_recent10y_score\": float(best_hybrid_row[\"recent10y_selection_score\"]),\n            \"best_recent10y_cagr\": float(best_hybrid_row[\"recent10y_cagr\"]),\n            \"best_recent10y_mdd\": float(best_hybrid_row[\"recent10y_mdd\"]),\n            \"best_cagr\": float(best_hybrid_row[\"cagr\"]),\n            \"best_mdd\": float(best_hybrid_row[\"mdd\"]),\n            \"worst_mdd\": float(hybrid_candidates[\"mdd\"].min()),\n        },\n'''); p.write_text(s, encoding='utf-8'); print('patched aggregate_results.py for recent10y_cagr selection')"
+
       - name: Download all shard artifacts
         uses: actions/download-artifact@v4
         with:
@@ -257,7 +261,7 @@ jobs:
             --hybrid-core-weight "${{ inputs.hybrid_core_weight }}" \
             --hybrid-satellite-weight "${{ inputs.hybrid_satellite_weight }}" \
             --hybrid-meta-topn "10" \
-            --hybrid-branch-topn "10" \
+            --hybrid-branch-topn "8" \
             --hybrid-rebalance-modes "always,month_end" \
             --hybrid-override-modes "none,meta_bear_crash_full"
 
