@@ -1,25 +1,11 @@
-lookback: [63, 84, 105, 126, 147, 168, 189, 210, 231, 252]
-rebalance: [weekly, biweekly, monthly]
-top1_weight: [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00]
+lookback: [84, 105, 126, 147]
+rebalance: [weekly, monthly]
+top1_weight: [0.50, 0.52, 0.55, 0.58, 0.60]
 
 vol_targeting:
   - enabled: false
     lookback_days: 20
     target_annual_vol: 0.60
     min_scale: 1.00
-    cash_asset: SGOV_MIX
-    annualization: 252
-
-  - enabled: true
-    lookback_days: 20
-    target_annual_vol: 0.55
-    min_scale: 0.35
-    cash_asset: SGOV_MIX
-    annualization: 252
-
-  - enabled: true
-    lookback_days: 40
-    target_annual_vol: 0.45
-    min_scale: 0.30
     cash_asset: SGOV_MIX
     annualization: 252
