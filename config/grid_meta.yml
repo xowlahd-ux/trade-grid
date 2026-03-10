@@ -1,26 +1,28 @@
 portfolio:
+  - rebalance: weekly
+    when: week_end
   - rebalance: monthly
     when: week_end
 
 state:
   - base_ticker: SPY
     ma_days: 150
-    min_hold_days: 11
+    min_hold_days: 5
   - base_ticker: SPY
-    ma_days: 200
+    ma_days: 150
     min_hold_days: 11
 
 crash:
   - enabled: true
     lookback_days: 12
-    threshold: -0.10
+    threshold: -0.08
     fast:
       enabled: true
       lookback_days: 6
       threshold: -0.06
   - enabled: true
     lookback_days: 12
-    threshold: -0.12
+    threshold: -0.10
     fast:
       enabled: true
       lookback_days: 6
@@ -29,9 +31,16 @@ crash:
 bear_fast:
   - enabled: true
     lookback_days: 4
+    threshold: -0.045
+  - enabled: true
+    lookback_days: 4
     threshold: -0.06
 
 trend_engine:
+  - candidates: [QQQ, SPY, SOXX]
+    mom_lookback_days: 84
+    top_n: 1
+    leverage_mode: mix_3x
   - candidates: [QQQ, SPY, SOXX]
     mom_lookback_days: 100
     top_n: 1
@@ -96,18 +105,6 @@ asset_crash:
       enabled: false
       lookback_days: 4
       threshold: -0.09
-  - SPY:
-      enabled: true
-      lookback_days: 6
-      threshold: -0.04
-    QQQ:
-      enabled: true
-      lookback_days: 4
-      threshold: -0.05
-    SOXX:
-      enabled: false
-      lookback_days: 4
-      threshold: -0.09
 
 recovery_boost:
   - enabled: false
@@ -145,12 +142,6 @@ vol_targeting:
     lookback_days: 20
     target_annual_vol: 0.60
     min_scale: 1.00
-    cash_asset: SGOV_MIX
-    annualization: 252
-  - enabled: true
-    lookback_days: 20
-    target_annual_vol: 0.55
-    min_scale: 0.35
     cash_asset: SGOV_MIX
     annualization: 252
 
