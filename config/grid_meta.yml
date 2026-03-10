@@ -5,22 +5,22 @@ portfolio:
 state:
   - base_ticker: SPY
     ma_days: 150
-    min_hold_days: 5
+    min_hold_days: 11
   - base_ticker: SPY
     ma_days: 200
-    min_hold_days: 5
+    min_hold_days: 11
 
 crash:
   - enabled: true
     lookback_days: 12
-    threshold: -0.08
+    threshold: -0.10
     fast:
       enabled: true
       lookback_days: 6
       threshold: -0.06
   - enabled: true
-    lookback_days: 16
-    threshold: -0.10
+    lookback_days: 12
+    threshold: -0.12
     fast:
       enabled: true
       lookback_days: 6
@@ -29,19 +29,11 @@ crash:
 bear_fast:
   - enabled: true
     lookback_days: 4
-    threshold: -0.045
+    threshold: -0.06
 
 trend_engine:
   - candidates: [QQQ, SPY, SOXX]
-    mom_lookback_days: 84
-    top_n: 1
-    leverage_mode: mix_3x
-  - candidates: [QQQ, SPY, SOXX]
     mom_lookback_days: 100
-    top_n: 1
-    leverage_mode: mix_3x
-  - candidates: [QQQ, SPY, SOXX]
-    mom_lookback_days: 130
     top_n: 1
     leverage_mode: mix_3x
 
@@ -68,18 +60,6 @@ allocator:
       trend: 0.0
       meanrev: 0.0
       defensive: 1.0
-  - bull:
-      trend: 0.90
-      meanrev: 0.0
-      defensive: 0.10
-    bear:
-      trend: 0.0
-      meanrev: 0.0
-      defensive: 1.0
-    crash:
-      trend: 0.0
-      meanrev: 0.0
-      defensive: 1.0
 
 risk_off:
   - mode: SGOV_100
@@ -87,8 +67,8 @@ risk_off:
 soxx_gate:
   - enabled: true
     mode: mom
-    mom_lookback_days: 20
-    mom_threshold: 0.024
+    mom_lookback_days: 45
+    mom_threshold: 0.0
     ma_days: 50
 
 asset_crash:
@@ -101,34 +81,46 @@ asset_crash:
       lookback_days: 6
       threshold: -0.06
     SOXX:
-      enabled: true
+      enabled: false
       lookback_days: 4
       threshold: -0.09
   - SPY:
       enabled: true
+      lookback_days: 6
+      threshold: -0.04
+    QQQ:
+      enabled: false
+      lookback_days: 6
+      threshold: -0.06
+    SOXX:
+      enabled: false
       lookback_days: 4
-      threshold: -0.05
+      threshold: -0.09
+  - SPY:
+      enabled: true
+      lookback_days: 6
+      threshold: -0.04
     QQQ:
       enabled: true
       lookback_days: 4
       threshold: -0.05
     SOXX:
-      enabled: true
+      enabled: false
       lookback_days: 4
       threshold: -0.09
 
 recovery_boost:
   - enabled: false
-    dd_enter: -0.15
+    dd_enter: -0.20
     qqq_ma_days: 20
     qqq_mom_days: 20
-    from_assets: [SGOV_MIX]
+    from_assets: [SGOV_MIX, QLD_MIX]
     to_asset: TQQQ_MIX
   - enabled: true
-    dd_enter: -0.15
+    dd_enter: -0.20
     qqq_ma_days: 20
     qqq_mom_days: 20
-    from_assets: [SGOV_MIX]
+    from_assets: [SGOV_MIX, QLD_MIX]
     to_asset: TQQQ_MIX
 
 soxx_admission_filter:
@@ -143,10 +135,10 @@ soxx_admission_filter:
 
 sgov_exit_assist:
   - enabled: false
-    apply_only_bull: true
-    qqq_ma_days: 20
-    spy_ma_days: 20
-    require_positive_mom: true
+    apply_only_bull: false
+    qqq_ma_days: 50
+    spy_ma_days: 50
+    require_positive_mom: false
 
 vol_targeting:
   - enabled: false
