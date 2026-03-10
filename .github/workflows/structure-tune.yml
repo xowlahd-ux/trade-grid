@@ -1,4 +1,4 @@
-name: structure-tune-from-new-baseline
+name: branch-grid-with-meta-override-0-100
 
 on:
   workflow_dispatch:
@@ -23,9 +23,17 @@ on:
         description: "sell cost fraction"
         required: true
         default: "0.0020"
+      shard_count:
+        description: "branch shard count"
+        required: true
+        default: "8"
+      max_parallel:
+        description: "max concurrent branch shard jobs"
+        required: true
+        default: "4"
 
 concurrency:
-  group: structure-tune-${{ github.ref_name }}
+  group: branch-grid-0-100-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -35,6 +43,10 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: ${{ github.workspace }}
+    outputs:
+      shard_count: ${{ steps.shard_plan.outputs.shard_count }}
+      max_parallel: ${{ steps.shard_plan.outputs.max_parallel }}
+      shard_matrix: ${{ steps.shard_plan.outputs.shard_matrix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +66,33 @@ jobs:
           test -f scripts/aggregate_results.py
           test -f config/final_meta_baseline_fixed.yml
           test -f config/final_branch_baseline_fixed.yml
+
+      - name: Compute shard plan
+        id: shard_plan
+        env:
+          INPUT_SHARD_COUNT: ${{ inputs.shard_count }}
+          INPUT_MAX_PARALLEL: ${{ inputs.max_parallel }}
+        run: |
+          count="${INPUT_SHARD_COUNT}"
+          mp="${INPUT_MAX_PARALLEL}"
+
+          if [ "$count" -lt 1 ] || [ "$count" -gt 16 ]; then
+            echo "shard_count must be between 1 and 16"
+            exit 1
+          fi
+
+          if [ "$mp" -lt 1 ] || [ "$mp" -gt 8 ]; then
+            echo "max_parallel must be between 1 and 8"
+            exit 1
+          fi
+
+          if [ "$mp" -gt "$count" ]; then
+            mp="$count"
+          fi
+
+          echo "shard_count=$count" >> "$GITHUB_OUTPUT"
+          echo "max_parallel=$mp" >> "$GITHUB_OUTPUT"
+          echo "shard_matrix={\"shard_idx\":[$(seq -s, 0 $((count-1)))]}" >> "$GITHUB_OUTPUT"
 
       - name: Download prices
         run: |
@@ -122,10 +161,15 @@ jobs:
   run-branch:
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: ${{ github.workspace }}
+
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(needs.prepare.outputs.max_parallel) }}
+      matrix: ${{ fromJson(needs.prepare.outputs.shard_matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -143,7 +187,7 @@ jobs:
           name: prices-${{ github.run_id }}
           path: data
 
-      - name: Run fixed branch
+      - name: Run branch shard
         run: |
           mkdir -p out
           python scripts/run_grid_shard.py \
@@ -155,23 +199,23 @@ jobs:
             --execution-mode "${{ inputs.execution_mode }}" \
             --buy-cost "${{ inputs.buy_cost }}" \
             --sell-cost "${{ inputs.sell_cost }}" \
-            --shard-idx 0 \
-            --shard-count 1 \
-            --out-csv out/grid_branch5a_shard_0.csv
+            --shard-idx "${{ matrix.shard_idx }}" \
+            --shard-count "${{ needs.prepare.outputs.shard_count }}" \
+            --out-csv "out/grid_branch5a_shard_${{ matrix.shard_idx }}.csv"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: shard-branch5a-0-${{ github.run_id }}
+          name: shard-branch5a-${{ matrix.shard_idx }}-${{ github.run_id }}
           if-no-files-found: error
           compression-level: 0
           path: |
-            out/grid_branch5a_shard_0.csv
-            out/grid_branch5a_shard_0.json
+            out/grid_branch5a_shard_${{ matrix.shard_idx }}.csv
+            out/grid_branch5a_shard_${{ matrix.shard_idx }}.json
 
   aggregate:
     needs: [run-meta, run-branch]
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: ${{ github.workspace }}
@@ -192,67 +236,19 @@ jobs:
           name: shard-meta-0-${{ github.run_id }}
           path: artifacts/meta
 
-      - uses: actions/download-artifact@v4
+      - name: Download all branch shard artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: shard-branch5a-0-${{ github.run_id }}
           path: artifacts/branch
+          pattern: shard-branch5a-*-${{ github.run_id }}
+          merge-multiple: false
 
       - uses: actions/download-artifact@v4
         with:
           name: prices-${{ github.run_id }}
           path: data
 
-      - name: Aggregate 0/100
-        run: |
-          mkdir -p out/aggregate_0_100
-          python scripts/aggregate_results.py \
-            --input-dir artifacts \
-            --out-dir out/aggregate_0_100 \
-            --prices-csv data/prices.csv \
-            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
-            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
-            --execution-mode "${{ inputs.execution_mode }}" \
-            --buy-cost "${{ inputs.buy_cost }}" \
-            --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.00" \
-            --hybrid-satellite-weight "1.00" \
-            --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
-            --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "meta_bear_crash_full" \
-            --hybrid-vol-enabled "false" \
-            --hybrid-vol-lookback-days "20" \
-            --hybrid-vol-target-annual-vol "0.55" \
-            --hybrid-vol-min-scale "0.35" \
-            --hybrid-vol-cash-asset "SGOV_MIX" \
-            --hybrid-vol-annualization "252"
-
-      - name: Aggregate 2.5/97.5
-        run: |
-          mkdir -p out/aggregate_2p5_97p5
-          python scripts/aggregate_results.py \
-            --input-dir artifacts \
-            --out-dir out/aggregate_2p5_97p5 \
-            --prices-csv data/prices.csv \
-            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
-            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
-            --execution-mode "${{ inputs.execution_mode }}" \
-            --buy-cost "${{ inputs.buy_cost }}" \
-            --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.025" \
-            --hybrid-satellite-weight "0.975" \
-            --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
-            --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "meta_bear_crash_full" \
-            --hybrid-vol-enabled "false" \
-            --hybrid-vol-lookback-days "20" \
-            --hybrid-vol-target-annual-vol "0.55" \
-            --hybrid-vol-min-scale "0.35" \
-            --hybrid-vol-cash-asset "SGOV_MIX" \
-            --hybrid-vol-annualization "252"
-
-      - name: Aggregate 5/95
+      - name: Aggregate 0/100 only
         run: |
           mkdir -p out/aggregate
           python scripts/aggregate_results.py \
@@ -264,60 +260,10 @@ jobs:
             --execution-mode "${{ inputs.execution_mode }}" \
             --buy-cost "${{ inputs.buy_cost }}" \
             --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.05" \
-            --hybrid-satellite-weight "0.95" \
+            --hybrid-core-weight "0.00" \
+            --hybrid-satellite-weight "1.00" \
             --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
-            --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "meta_bear_crash_full" \
-            --hybrid-vol-enabled "false" \
-            --hybrid-vol-lookback-days "20" \
-            --hybrid-vol-target-annual-vol "0.55" \
-            --hybrid-vol-min-scale "0.35" \
-            --hybrid-vol-cash-asset "SGOV_MIX" \
-            --hybrid-vol-annualization "252"
-
-      - name: Aggregate 7.5/92.5
-        run: |
-          mkdir -p out/aggregate_7p5_92p5
-          python scripts/aggregate_results.py \
-            --input-dir artifacts \
-            --out-dir out/aggregate_7p5_92p5 \
-            --prices-csv data/prices.csv \
-            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
-            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
-            --execution-mode "${{ inputs.execution_mode }}" \
-            --buy-cost "${{ inputs.buy_cost }}" \
-            --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.075" \
-            --hybrid-satellite-weight "0.925" \
-            --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
-            --hybrid-rebalance-modes "always" \
-            --hybrid-override-modes "meta_bear_crash_full" \
-            --hybrid-vol-enabled "false" \
-            --hybrid-vol-lookback-days "20" \
-            --hybrid-vol-target-annual-vol "0.55" \
-            --hybrid-vol-min-scale "0.35" \
-            --hybrid-vol-cash-asset "SGOV_MIX" \
-            --hybrid-vol-annualization "252"
-
-      - name: Aggregate 10/90
-        run: |
-          mkdir -p out/aggregate_10_90
-          python scripts/aggregate_results.py \
-            --input-dir artifacts \
-            --out-dir out/aggregate_10_90 \
-            --prices-csv data/prices.csv \
-            --meta-grid-yaml config/final_meta_baseline_fixed.yml \
-            --branch-grid-yaml config/final_branch_baseline_fixed.yml \
-            --execution-mode "${{ inputs.execution_mode }}" \
-            --buy-cost "${{ inputs.buy_cost }}" \
-            --sell-cost "${{ inputs.sell_cost }}" \
-            --hybrid-core-weight "0.10" \
-            --hybrid-satellite-weight "0.90" \
-            --hybrid-meta-topn "1" \
-            --hybrid-branch-topn "1" \
+            --hybrid-branch-topn "100" \
             --hybrid-rebalance-modes "always" \
             --hybrid-override-modes "meta_bear_crash_full" \
             --hybrid-vol-enabled "false" \
@@ -332,9 +278,4 @@ jobs:
           name: aggregate-${{ github.run_id }}
           if-no-files-found: error
           compression-level: 0
-          path: |
-            out/aggregate/
-            out/aggregate_0_100/
-            out/aggregate_2p5_97p5/
-            out/aggregate_7p5_92p5/
-            out/aggregate_10_90/
+          path: out/aggregate/
