@@ -1,0 +1,267 @@
+name: tune-from-22899904272-baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "YYYY-MM-DD"
+        required: true
+        default: "2000-01-01"
+      end_date:
+        description: "YYYY-MM-DD or latest"
+        required: true
+        default: "latest"
+      execution_mode:
+        description: "mode1 or mode2"
+        required: true
+        default: "mode2"
+      buy_cost:
+        description: "buy cost fraction"
+        required: true
+        default: "0.0020"
+      sell_cost:
+        description: "sell cost fraction"
+        required: true
+        default: "0.0020"
+
+concurrency:
+  group: tune-from-22899904272-baseline-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate repo layout
+        run: |
+          test -f scripts/download_prices.py
+          test -f scripts/run_grid_shard.py
+          test -f scripts/aggregate_results.py
+          test -f src/__init__.py
+          test -f src/core/execution.py
+          test -f src/core/grid.py
+          test -f src/core/metrics.py
+          test -f src/core/state.py
+          test -f src/engines/meta.py
+          test -f src/engines/branch5a.py
+          test -f config/final_meta_baseline_tune.yml
+          test -f config/final_branch_baseline_tune.yml
+
+      - name: Download prices
+        run: |
+          mkdir -p data
+          python scripts/download_prices.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ inputs.end_date }}" \
+            --out-csv data/prices.csv
+
+      - name: Upload price artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          if-no-files-found: error
+          compression-level: 0
+          path: data/prices.csv
+
+  run-meta:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download price artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          path: data
+
+      - name: Run meta shard
+        run: |
+          mkdir -p out
+          python scripts/run_grid_shard.py \
+            --engine meta \
+            --grid-yaml config/final_meta_baseline_tune.yml \
+            --prices-csv data/prices.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ inputs.end_date }}" \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --shard-idx 0 \
+            --shard-count 1 \
+            --out-csv out/grid_meta_shard_0.csv
+
+      - name: Upload meta artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-meta-0-${{ github.run_id }}
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            out/grid_meta_shard_0.csv
+            out/grid_meta_shard_0.json
+
+  run-branch:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download price artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          path: data
+
+      - name: Run branch shard
+        run: |
+          mkdir -p out
+          python scripts/run_grid_shard.py \
+            --engine branch5a \
+            --grid-yaml config/final_branch_baseline_tune.yml \
+            --prices-csv data/prices.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ inputs.end_date }}" \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --shard-idx 0 \
+            --shard-count 1 \
+            --out-csv out/grid_branch5a_shard_0.csv
+
+      - name: Upload branch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-branch5a-0-${{ github.run_id }}
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            out/grid_branch5a_shard_0.csv
+            out/grid_branch5a_shard_0.json
+
+  aggregate:
+    needs: [run-meta, run-branch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Patch aggregate selection basis to recent10y_cagr
+        run: |
+          python -c "from pathlib import Path; p=Path('scripts/aggregate_results.py'); s=p.read_text(encoding='utf-8'); s=s.replace('''    meta_rows = meta_rows.sort_values([\"selection_score\", \"cagr\", \"mdd\"], ascending=[False, False, False]).reset_index(drop=True)\n    branch_rows = branch_rows.sort_values([\"selection_score\", \"cagr\", \"mdd\"], ascending=[False, False, False]).reset_index(drop=True)\n''','''    if \"recent10y_selection_score\" not in all_df.columns:\n        all_df[\"recent10y_selection_score\"] = all_df.apply(\n            lambda r: compute_selection_score(r[\"recent10y_cagr\"], r[\"recent10y_mdd\"], int(r.get(\"recent10y_max_recovery_days\", 0))),\n            axis=1,\n        )\n\n    meta_rows = meta_rows.sort_values(\n        [\"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"],\n        ascending=[False, False, False, False],\n    ).reset_index(drop=True)\n    branch_rows = branch_rows.sort_values(\n        [\"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"],\n        ascending=[False, False, False, False],\n    ).reset_index(drop=True)\n'''); s=s.replace('''    hybrid_candidates = pd.DataFrame(hybrid_rows).sort_values([\"selection_score\", \"cagr\", \"mdd\"], ascending=[False, False, False]).reset_index(drop=True)\n''','''    hybrid_candidates = pd.DataFrame(hybrid_rows).sort_values(\n        [\"recent10y_cagr\", \"recent10y_selection_score\", \"recent10y_mdd\", \"cagr\"],\n        ascending=[False, False, False, False],\n    ).reset_index(drop=True)\n'''); s=s.replace('''                    if (row[\"selection_score\"], row[\"cagr\"], row[\"mdd\"]) > (best_row[\"selection_score\"], best_row[\"cagr\"], best_row[\"mdd\"]):\n                        best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)\n''','''                    if (\n                        row[\"recent10y_cagr\"],\n                        row[\"recent10y_selection_score\"],\n                        row[\"recent10y_mdd\"],\n                        row[\"cagr\"],\n                    ) > (\n                        best_row[\"recent10y_cagr\"],\n                        best_row[\"recent10y_selection_score\"],\n                        best_row[\"recent10y_mdd\"],\n                        best_row[\"cagr\"],\n                    ):\n                        best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)\n'''); s=s.replace('''                    f\"score={row['selection_score']:.6f} cagr={row['cagr']:.6f} mdd={row['mdd']:.6f}\"\n''','''                    f\"recent10y_cagr={row['recent10y_cagr']:.6f} \"\n                    f\"recent10y_score={row['recent10y_selection_score']:.6f} \"\n                    f\"cagr={row['cagr']:.6f} mdd={row['mdd']:.6f}\"\n'''); p.write_text(s, encoding='utf-8'); print('patched aggregate_results.py for recent10y_cagr selection')"
+
+      - name: Download meta artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: shard-meta-0-${{ github.run_id }}
+          path: artifacts/meta
+
+      - name: Download branch artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: shard-branch5a-0-${{ github.run_id }}
+          path: artifacts/branch
+
+      - name: Download price artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prices-${{ github.run_id }}
+          path: data
+
+      - name: Aggregate tuned baseline
+        run: |
+          mkdir -p out/aggregate
+          python scripts/aggregate_results.py \
+            --input-dir artifacts \
+            --out-dir out/aggregate \
+            --prices-csv data/prices.csv \
+            --meta-grid-yaml config/final_meta_baseline_tune.yml \
+            --branch-grid-yaml config/final_branch_baseline_tune.yml \
+            --execution-mode "${{ inputs.execution_mode }}" \
+            --buy-cost "${{ inputs.buy_cost }}" \
+            --sell-cost "${{ inputs.sell_cost }}" \
+            --hybrid-core-weight "0.70" \
+            --hybrid-satellite-weight "0.30" \
+            --hybrid-meta-topn "2" \
+            --hybrid-branch-topn "2" \
+            --hybrid-rebalance-modes "always,month_end" \
+            --hybrid-override-modes "meta_bear_crash_full" \
+            --hybrid-vol-enabled "false" \
+            --hybrid-vol-lookback-days "20" \
+            --hybrid-vol-target-annual-vol "0.55" \
+            --hybrid-vol-min-scale "0.35" \
+            --hybrid-vol-cash-asset "SGOV_MIX" \
+            --hybrid-vol-annualization "252"
+
+      - name: Upload aggregate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregate-${{ github.run_id }}
+          if-no-files-found: error
+          compression-level: 0
+          path: out/aggregate/
