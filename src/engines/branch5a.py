@@ -165,8 +165,8 @@ def build_branch5a_holdings(
     if missing:
         raise ValueError(f"prices.csv에 필요한 컬럼이 없음: {missing}")
 
-    if not (0.5 <= float(top1_weight) <= 1.0):
-        raise ValueError("top1_weight must be between 0.5 and 1.0")
+    if not (0.0 <= float(top1_weight) <= 1.0):
+        raise ValueError("top1_weight must be between 0.0 and 1.0")
 
     top2_weight = 1.0 - float(top1_weight)
 
