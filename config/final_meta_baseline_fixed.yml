@@ -120,5 +120,3 @@ advanced_rebalance:
     anchor_rebalance_on_override_exit: false
   - reselect_on_override_exit: true
     anchor_rebalance_on_override_exit: true
-  - reselect_on_override_exit: false
-    anchor_rebalance_on_override_exit: true
