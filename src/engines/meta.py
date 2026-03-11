@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from pandas.tseries.offsets import DateOffset
 
 from src.core.state import compute_state_flags
 
@@ -79,6 +80,29 @@ def _period_end_trading_dates(idx: pd.DatetimeIndex, freq: str) -> pd.DatetimeIn
     return pd.DatetimeIndex(s.resample(freq).last().dropna().values)
 
 
+
+
+def _is_defensive_only(h: dict[str, float], defensive_keys: set[str]) -> bool:
+    if not h:
+        return False
+    active = {k for k, v in h.items() if float(v) > 1e-12}
+    return len(active) > 0 and active.issubset(defensive_keys)
+
+
+def _next_trading_day_on_or_after(idx: pd.DatetimeIndex, dt: pd.Timestamp) -> pd.Timestamp | None:
+    pos = idx.searchsorted(pd.Timestamp(dt), side="left")
+    if pos >= len(idx):
+        return None
+    return pd.Timestamp(idx[pos])
+
+
+def _add_one_month_anchor(dt: pd.Timestamp) -> pd.Timestamp:
+    base = pd.Timestamp(dt)
+    first_next_month = (base.replace(day=1) + DateOffset(months=1))
+    month_end_next = (first_next_month + pd.offsets.MonthEnd(0))
+    day = min(base.day, month_end_next.day)
+    return pd.Timestamp(first_next_month.replace(day=day))
+
 def _normalize_weights(h: dict) -> dict:
     s = float(sum(h.values()))
     if s <= 0:
@@ -149,6 +173,10 @@ def run_meta_portfolio(
     port_cfg = cfg.get("portfolio", {}) or {}
     reb_mode = str(port_cfg.get("rebalance", "weekly")).lower().strip()
     when_mode = str(port_cfg.get("when", "week_end")).lower().strip()
+
+    adv_rb_cfg = cfg.get("advanced_rebalance", {}) or {}
+    reselect_on_override_exit = bool(adv_rb_cfg.get("reselect_on_override_exit", False))
+    anchor_rebalance_on_override_exit = bool(adv_rb_cfg.get("anchor_rebalance_on_override_exit", False))
 
     asset_crash_cfg = cfg.get("asset_crash", {}) or {}
 
@@ -326,6 +354,8 @@ def run_meta_portfolio(
         reb_dates = _period_end_trading_dates(prices.index, "QE")
     else:
         reb_dates = fridays
+    reb_dates = pd.DatetimeIndex(reb_dates)
+    reb_date_set = set(pd.DatetimeIndex(reb_dates))
 
     wclose = _weekly_close(prices)
 
@@ -357,6 +387,10 @@ def run_meta_portfolio(
     holdings_daily_rows = []
     target_rows = []
 
+    last_effective_target: dict[str, float] = {"SHY": 1.0}
+    anchor_base_date: pd.Timestamp | None = None
+    next_anchor_rebalance_date: pd.Timestamp | None = None
+
     equity_peak = equity
     idx = prices.index
 
@@ -377,7 +411,8 @@ def run_meta_portfolio(
         equity_peak = max(equity_peak, equity)
         equity_dd = float(equity / equity_peak - 1.0) if equity_peak > 0 else 0.0
 
-        rebalance_today = bool(dt in reb_dates)
+        base_rebalance_today = bool(dt in reb_date_set)
+        rebalance_today = base_rebalance_today
 
         soxx_gate_applied = False
         soxx_gate_blocked = False
@@ -414,8 +449,25 @@ def run_meta_portfolio(
                 asset_crash_thr_used = thr
                 break
 
+        h_prev_effective = last_effective_target if i > 0 else {"SHY": 1.0}
+        prev_defensive_only = _is_defensive_only(h_prev_effective, defensive_keys)
+
+        today_state_key = st.lower()
+        today_is_defensive_by_state = today_state_key != "bull"
+        today_is_defensive = today_is_defensive_by_state or asset_crash_hit
+        override_exit_today = prev_defensive_only and (not today_is_defensive)
+        reselected_on_override_exit = False
+        anchor_reset_today = False
+
+        if anchor_rebalance_on_override_exit and next_anchor_rebalance_date is not None and dt == next_anchor_rebalance_date:
+            rebalance_today = True
+
+        if override_exit_today and reselect_on_override_exit:
+            rebalance_today = True
+
         if rebalance_today:
             m = mom.loc[dt].reindex(candidates)
+            selection_source = "override_exit" if (override_exit_today and reselect_on_override_exit) else ("anchor_schedule" if (anchor_rebalance_on_override_exit and next_anchor_rebalance_date is not None and dt == next_anchor_rebalance_date and not base_rebalance_today) else "base_schedule")
             ranked = m.dropna().sort_values(ascending=False)
             top = list(ranked.index[:top_n]) if not ranked.empty else []
 
@@ -430,6 +482,18 @@ def run_meta_portfolio(
 
             current_trend_underlyings = [t for t in top if t is not None]
             current_trend_tradecols = [_trend_trade_col(t, trend_leverage_mode) for t in current_trend_underlyings]
+
+            if override_exit_today and reselect_on_override_exit:
+                reselected_on_override_exit = True
+                if anchor_rebalance_on_override_exit:
+                    anchor_base_date = pd.Timestamp(dt)
+                    candidate_due = _add_one_month_anchor(anchor_base_date)
+                    next_anchor_rebalance_date = _next_trading_day_on_or_after(prices.index, candidate_due)
+                    anchor_reset_today = True
+            elif anchor_rebalance_on_override_exit and next_anchor_rebalance_date is not None and dt == next_anchor_rebalance_date:
+                anchor_base_date = pd.Timestamp(dt)
+                candidate_due = _add_one_month_anchor(anchor_base_date)
+                next_anchor_rebalance_date = _next_trading_day_on_or_after(prices.index, candidate_due)
 
             wk = _week_end_index(pd.DatetimeIndex([dt]))[0]
             top1 = top[0] if len(top) > 0 else None
@@ -446,6 +510,14 @@ def run_meta_portfolio(
                 "rebalance_mode": reb_mode,
                 "rebalance_today": True,
                 "trend_leverage_mode": trend_leverage_mode,
+                "reselect_on_override_exit": bool(reselect_on_override_exit),
+                "anchor_rebalance_on_override_exit": bool(anchor_rebalance_on_override_exit),
+                "override_exit_today": bool(override_exit_today),
+                "reselected_on_override_exit": bool(reselected_on_override_exit),
+                "anchor_reset_today": bool(anchor_reset_today),
+                "rebalance_source": selection_source,
+                "anchor_base_date": (str(anchor_base_date.date()) if anchor_base_date is not None else ""),
+                "next_anchor_rebalance_date": (str(next_anchor_rebalance_date.date()) if next_anchor_rebalance_date is not None else ""),
                 "soxx_gate_enabled": bool(soxx_gate_enabled),
                 "soxx_gate_applied": bool(soxx_gate_applied),
                 "soxx_gate_blocked": bool(soxx_gate_blocked),
@@ -634,16 +706,27 @@ def run_meta_portfolio(
                     sea_selected_trade = chosen_trade
 
         h_des = _normalize_weights(h_des)
+
+        rebalance_source_log = ""
+        if rebalance_today:
+            if override_exit_today and reselect_on_override_exit:
+                rebalance_source_log = "override_exit"
+            elif anchor_rebalance_on_override_exit and base_rebalance_today is False and anchor_base_date is not None and dt == anchor_base_date:
+                rebalance_source_log = "anchor_schedule"
+            else:
+                rebalance_source_log = "base_schedule"
         if not h_des:
             h_des = {"SHY": 1.0}
 
-        target_row = {"date": dt}
+        target_row = {"date": dt, "override_exit_today": bool(override_exit_today), "reselected_on_override_exit": bool(reselected_on_override_exit), "anchor_reset_today": bool(anchor_reset_today)}
         target_row.update(_supported_target_weights(h_des))
         target_rows.append(target_row)
 
         turnover_sum_abs = 0.0
         cost_frac = 0.0
         traded = False
+
+        last_effective_target = dict(h_des)
 
         if i < len(idx) - 1:
             keys = set(h_cur.keys()) | set(h_des.keys())
@@ -675,6 +758,15 @@ def run_meta_portfolio(
                 "rebalance_today": bool(rebalance_today),
                 "rebalance_mode": reb_mode,
                 "trend_leverage_mode": trend_leverage_mode,
+                "reselect_on_override_exit": bool(reselect_on_override_exit),
+                "anchor_rebalance_on_override_exit": bool(anchor_rebalance_on_override_exit),
+                "base_rebalance_today": bool(base_rebalance_today),
+                "override_exit_today": bool(override_exit_today),
+                "reselected_on_override_exit": bool(reselected_on_override_exit),
+                "anchor_reset_today": bool(anchor_reset_today),
+                "anchor_base_date": (str(anchor_base_date.date()) if anchor_base_date is not None else ""),
+                "next_anchor_rebalance_date": (str(next_anchor_rebalance_date.date()) if next_anchor_rebalance_date is not None else ""),
+                "rebalance_source": rebalance_source_log,
                 "turnover_sum_abs": float(turnover_sum_abs),
                 "turnover_one_way": float(turnover_sum_abs) * 0.5,
                 "cost_buy": float(buy_cost),
