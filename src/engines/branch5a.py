@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from dateutil.relativedelta import relativedelta
 import numpy as np
 import pandas as pd
 
@@ -34,6 +35,85 @@ def monthly_rebalance_dates(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
 def quarterly_rebalance_dates(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
     s = pd.Series(idx, index=idx)
     return pd.DatetimeIndex(s.resample("QE").last().dropna().values)
+
+
+def _shift_to_next_trading_day(idx: pd.DatetimeIndex, dt: pd.Timestamp) -> pd.Timestamp | None:
+    pos = idx.searchsorted(dt)
+    if pos >= len(idx):
+        return None
+    return pd.Timestamp(idx[pos])
+
+
+def _anchor_monthly_rebalance_dates(
+    idx: pd.DatetimeIndex,
+    anchor: pd.Timestamp,
+) -> pd.DatetimeIndex:
+    if len(idx) == 0:
+        return pd.DatetimeIndex([])
+
+    idx = pd.DatetimeIndex(idx).sort_values()
+    anchor = pd.Timestamp(anchor)
+    dates: list[pd.Timestamp] = []
+    current = anchor
+
+    while True:
+        next_calendar = current + relativedelta(months=+1)
+        shifted = _shift_to_next_trading_day(idx, next_calendar)
+        if shifted is None:
+            break
+        dates.append(shifted)
+        current = next_calendar
+
+    if not dates:
+        return pd.DatetimeIndex([])
+    return pd.DatetimeIndex(dates).drop_duplicates().sort_values()
+
+
+def _advanced_branch_rebalance_dates(
+    idx: pd.DatetimeIndex,
+    rebalance: str,
+    override_exit_dates: list[pd.Timestamp] | pd.DatetimeIndex | None = None,
+    reselect_on_override_exit: bool = False,
+    anchor_rebalance_on_override_exit: bool = False,
+) -> pd.DatetimeIndex:
+    base = get_rebalance_dates(idx, rebalance)
+    if not reselect_on_override_exit:
+        return base
+
+    if override_exit_dates is None:
+        return base
+
+    exits = pd.DatetimeIndex(pd.to_datetime(list(override_exit_dates))).dropna().sort_values().unique()
+    exits = pd.DatetimeIndex([pd.Timestamp(x) for x in exits if pd.Timestamp(x) in idx])
+    if len(exits) == 0:
+        return base
+
+    if not anchor_rebalance_on_override_exit:
+        return base.union(exits).sort_values()
+
+    mode = str(rebalance).lower().strip()
+    if mode != "monthly":
+        raise ValueError(
+            "anchor_rebalance_on_override_exit currently supports rebalance='monthly' only"
+        )
+
+    all_dates: list[pd.Timestamp] = []
+    cursor = pd.Timestamp(idx.min())
+
+    for exit_dt in exits:
+        pre_base = base[(base >= cursor) & (base < exit_dt)]
+        all_dates.extend(list(pre_base))
+        all_dates.append(pd.Timestamp(exit_dt))
+        cursor = pd.Timestamp(exit_dt) + pd.Timedelta(days=1)
+
+    if len(exits) > 0:
+        tail_anchor = pd.Timestamp(exits[-1])
+        anchored = _anchor_monthly_rebalance_dates(idx, tail_anchor)
+        anchored = anchored[anchored > tail_anchor]
+        all_dates.extend(list(anchored))
+
+    reb_dates = pd.DatetimeIndex(all_dates).drop_duplicates().sort_values()
+    return reb_dates
 
 
 def get_rebalance_dates(idx: pd.DatetimeIndex, rebalance: str) -> pd.DatetimeIndex:
@@ -149,6 +229,9 @@ def build_branch5a_holdings(
     top1_weight: float,
     buy_cost: float,
     sell_cost: float,
+    override_exit_dates: list[pd.Timestamp] | pd.DatetimeIndex | None = None,
+    reselect_on_override_exit: bool = False,
+    anchor_rebalance_on_override_exit: bool = False,
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     prices = prices.copy().sort_index()
     returns = prices.pct_change().fillna(0.0)
@@ -171,7 +254,15 @@ def build_branch5a_holdings(
     top2_weight = 1.0 - float(top1_weight)
 
     scores = rolling_sharpe_scores(prices, underlyings, lookback)
-    reb_dates = set(get_rebalance_dates(prices.index, rebalance))
+    reb_dates = set(
+        _advanced_branch_rebalance_dates(
+            prices.index,
+            rebalance,
+            override_exit_dates=override_exit_dates,
+            reselect_on_override_exit=reselect_on_override_exit,
+            anchor_rebalance_on_override_exit=anchor_rebalance_on_override_exit,
+        )
+    )
 
     h_cur: dict[str, float] = {defensive: 1.0}
     equity = 1.0
@@ -228,6 +319,8 @@ def build_branch5a_holdings(
                     "score1": float(s.iloc[0]) if len(s) >= 1 else np.nan,
                     "score2": float(s.iloc[1]) if len(s) >= 2 else np.nan,
                     "target_holdings": json.dumps(h_des, ensure_ascii=False),
+                    "reselect_on_override_exit": bool(reselect_on_override_exit),
+                    "anchor_rebalance_on_override_exit": bool(anchor_rebalance_on_override_exit),
                 }
             )
 
@@ -263,6 +356,9 @@ def run_one(
     top1_weight: float,
     buy_cost: float,
     sell_cost: float,
+    override_exit_dates: list[pd.Timestamp] | pd.DatetimeIndex | None = None,
+    reselect_on_override_exit: bool = False,
+    anchor_rebalance_on_override_exit: bool = False,
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     equity, holdings_df, rebalance_df, target_df = build_branch5a_holdings(
         prices=prices,
@@ -271,6 +367,9 @@ def run_one(
         top1_weight=top1_weight,
         buy_cost=buy_cost,
         sell_cost=sell_cost,
+        override_exit_dates=override_exit_dates,
+        reselect_on_override_exit=reselect_on_override_exit,
+        anchor_rebalance_on_override_exit=anchor_rebalance_on_override_exit,
     )
 
     full = compute_metrics(equity)
@@ -284,6 +383,8 @@ def run_one(
         "top2_weight": float(1.0 - top1_weight),
         "buy_cost": float(buy_cost),
         "sell_cost": float(sell_cost),
+        "reselect_on_override_exit": bool(reselect_on_override_exit),
+        "anchor_rebalance_on_override_exit": bool(anchor_rebalance_on_override_exit),
         "cagr": full.cagr,
         "mdd": full.mdd,
         "max_recovery_days": full.max_recovery_days,
@@ -296,10 +397,19 @@ def run_one(
     return equity, holdings_df, rebalance_df, target_df, summary_row
 
 
-def build_branch5a_targets(prices: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+def build_branch5a_targets(
+    prices: pd.DataFrame,
+    cfg: dict,
+    *,
+    override_exit_dates: list[pd.Timestamp] | pd.DatetimeIndex | None = None,
+) -> pd.DataFrame:
     lookback = int(cfg.get("lookback", 133))
     rebalance = str(cfg.get("rebalance", "weekly"))
     top1_weight = float(cfg.get("top1_weight", 0.80))
+
+    adv_cfg = cfg.get("advanced_rebalance", {}) or {}
+    reselect_on_override_exit = bool(adv_cfg.get("reselect_on_override_exit", False))
+    anchor_rebalance_on_override_exit = bool(adv_cfg.get("anchor_rebalance_on_override_exit", False))
 
     _, _, _, target_df, _ = run_one(
         prices=prices,
@@ -308,5 +418,8 @@ def build_branch5a_targets(prices: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         top1_weight=top1_weight,
         buy_cost=0.0,
         sell_cost=0.0,
+        override_exit_dates=override_exit_dates,
+        reselect_on_override_exit=reselect_on_override_exit,
+        anchor_rebalance_on_override_exit=anchor_rebalance_on_override_exit,
     )
     return target_df.copy()
