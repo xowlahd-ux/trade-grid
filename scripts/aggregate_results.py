@@ -122,7 +122,18 @@ def month_end_trading_dates(idx: pd.DatetimeIndex) -> set[pd.Timestamp]:
     s = pd.Series(idx, index=idx)
     return set(pd.DatetimeIndex(s.resample("ME").last().dropna().values))
 
+def compute_override_exit_dates(meta_state: pd.Series) -> pd.DatetimeIndex:
+    if meta_state is None or len(meta_state) == 0:
+        return pd.DatetimeIndex([])
 
+    s = pd.Series(meta_state).copy()
+    s.index = pd.to_datetime(s.index)
+    s = s.astype(str).ffill()
+
+    is_risk_off = s.isin({"BEAR", "CRASH"})
+    exit_mask = (~is_risk_off) & is_risk_off.shift(1, fill_value=False)
+    return pd.DatetimeIndex(s.index[exit_mask]).sort_values()
+    
 def apply_meta_cost_overrides(
     cfg: dict[str, Any],
     params: dict[str, Any],
@@ -245,10 +256,15 @@ def build_branch_result(
     execution_mode: str,
     buy_cost: float,
     sell_cost: float,
+    override_exit_dates: pd.DatetimeIndex | None = None,
 ) -> dict[str, Any]:
     one_cfg, params = find_combo_by_index(grid_yaml, combo_idx)
 
-    targets = build_branch5a_targets(prices.copy(), one_cfg).copy()
+    targets = build_branch5a_targets(
+        prices.copy(),
+        one_cfg,
+        override_exit_dates=override_exit_dates,
+    ).copy()
     target_aligned = align_target_df(targets, prices.index)
     target_aligned = align_target_df(
         apply_vol_targeting(prices=prices, targets=target_aligned, cfg_or_block=one_cfg),
@@ -269,8 +285,8 @@ def build_branch_result(
         "params": params,
         "equity": equity,
         "targets": target_aligned,
+        "override_exit_dates": pd.DatetimeIndex([]) if override_exit_dates is None else pd.DatetimeIndex(override_exit_dates),
     }
-
 
 def save_meta_folder(
     *,
@@ -813,7 +829,7 @@ def main() -> None:
     meta_cache: dict[int, dict[str, Any]] = {
         int(meta_best_result["combo_idx"]): meta_best_result
     }
-    branch_cache: dict[int, dict[str, Any]] = {
+    branch_cache: dict[Any, dict[str, Any]] = {
         int(branch_best_result["combo_idx"]): branch_best_result
     }
 
@@ -839,18 +855,22 @@ def main() -> None:
             )
         meta_result = meta_cache[m_idx]
 
+        override_exit_dates = compute_override_exit_dates(meta_result["meta_state"])
+
         for _, brow in branch_top.iterrows():
             b_idx = int(brow["combo_idx"])
-            if b_idx not in branch_cache:
-                branch_cache[b_idx] = build_branch_result(
+            branch_cache_key = (m_idx, b_idx)
+            if branch_cache_key not in branch_cache:
+                branch_cache[branch_cache_key] = build_branch_result(
                     combo_idx=b_idx,
                     prices=prices,
                     grid_yaml=args.branch_grid_yaml,
                     execution_mode=args.execution_mode,
                     buy_cost=args.buy_cost,
                     sell_cost=args.sell_cost,
+                    override_exit_dates=override_exit_dates,
                 )
-            branch_result = branch_cache[b_idx]
+            branch_result = branch_cache[branch_cache_key]
 
             for reb_mode, ov_mode in itertools.product(rebalance_modes, override_modes):
                 hybrid_equity, hybrid_targets, row = evaluate_hybrid_combo(
@@ -873,19 +893,29 @@ def main() -> None:
                     best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)
                 else:
                     _, _, best_row, _, _ = best_payload
-                    if (row["selection_score"], row["cagr"], row["mdd"]) > (
-                        best_row["selection_score"],
-                        best_row["cagr"],
-                        best_row["mdd"],
-                    ):
+                    better = (
+                        float(row["selection_score"]) > float(best_row["selection_score"])
+                        or (
+                            float(row["selection_score"]) == float(best_row["selection_score"])
+                            and float(row["cagr"]) > float(best_row["cagr"])
+                        )
+                        or (
+                            float(row["selection_score"]) == float(best_row["selection_score"])
+                            and float(row["cagr"]) == float(best_row["cagr"])
+                            and float(row["mdd"]) > float(best_row["mdd"])
+                        )
+                    )
+                    if better:
                         best_payload = (hybrid_equity, hybrid_targets, row, meta_result, branch_result)
 
                 done += 1
                 print(
-                    f"[hybrid-search] {done}/{total_combos} "
-                    f"meta={m_idx} branch={b_idx} "
-                    f"rebalance={reb_mode} override={ov_mode} "
-                    f"score={row['selection_score']:.6f} cagr={row['cagr']:.6f} mdd={row['mdd']:.6f} "
+                    f"[hybrid] {done}/{total_combos} "
+                    f"meta_idx={m_idx} branch_idx={b_idx} "
+                    f"reb={reb_mode} ov={ov_mode} "
+                    f"score={row['selection_score']:.6f} "
+                    f"cagr={row['cagr']:.6f} "
+                    f"mdd={row['mdd']:.6f} "
                     f"hybrid_vol_enabled={row['hybrid_vol_target_enabled']}"
                 )
 
