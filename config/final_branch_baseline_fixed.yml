@@ -1,6 +1,14 @@
-lookback: [126]
+lookback: [119, 126, 133]
 rebalance: [monthly]
-top1_weight: [0.50]
+top1_weight: [0.50, 0.52, 0.55, 0.58]
+
+advanced_rebalance:
+  - reselect_on_override_exit: false
+    anchor_rebalance_on_override_exit: false
+  - reselect_on_override_exit: true
+    anchor_rebalance_on_override_exit: false
+  - reselect_on_override_exit: true
+    anchor_rebalance_on_override_exit: true
 
 vol_targeting:
   - enabled: false
