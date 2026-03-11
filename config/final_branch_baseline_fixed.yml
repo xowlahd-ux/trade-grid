@@ -1,6 +1,6 @@
 lookback: [119, 126, 133]
 rebalance: [monthly]
-top1_weight: [0.50, 0.52, 0.55, 0.58]
+top1_weight: [0.50, 0.70, 1.00]
 
 advanced_rebalance:
   - reselect_on_override_exit: false
