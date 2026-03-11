@@ -262,7 +262,7 @@ jobs:
             --sell-cost "${{ inputs.sell_cost }}" \
             --hybrid-core-weight "0.00" \
             --hybrid-satellite-weight "1.00" \
-            --hybrid-meta-topn "1" \
+            --hybrid-meta-topn "0" \
             --hybrid-branch-topn "100" \
             --hybrid-rebalance-modes "always" \
             --hybrid-override-modes "meta_bear_crash_full" \
