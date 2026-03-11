@@ -461,7 +461,7 @@ def build_hybrid_targets(
                 else:
                     raise ValueError(f"unsupported hybrid_rebalance_mode: {hybrid_rebalance_mode}")
 
-                # branch 비중을 절반만 반영하고, 줄어든 만큼 meta로 이동
+                # branch ë¹ì¤ì ì ë°ë§ ë°ìíê³ , ì¤ì´ë  ë§í¼ metaë¡ ì´ë
                 bear_branch_scale = 0.5
                 cap_branch_partial = cap_branch_target * bear_branch_scale
                 cap_meta_partial = 1.0 - cap_branch_partial
@@ -797,11 +797,18 @@ def main() -> None:
         folder=out_dir / "branch5a_best",
     )
 
-    meta_topn = max(1, int(args.hybrid_meta_topn))
-    branch_topn = max(1, int(args.hybrid_branch_topn))
+    meta_topn = int(args.hybrid_meta_topn)
+    branch_topn = int(args.hybrid_branch_topn)
 
-    meta_top = meta_rows.head(meta_topn).copy()
-    branch_top = branch_rows.head(branch_topn).copy()
+    if meta_topn <= 0:
+        meta_top = meta_rows.copy()
+    else:
+        meta_top = meta_rows.head(meta_topn).copy()
+
+    if branch_topn <= 0:
+        branch_top = branch_rows.copy()
+    else:
+        branch_top = branch_rows.head(branch_topn).copy()
 
     meta_cache: dict[int, dict[str, Any]] = {
         int(meta_best_result["combo_idx"]): meta_best_result
