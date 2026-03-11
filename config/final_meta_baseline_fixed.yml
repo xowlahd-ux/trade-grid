@@ -15,7 +15,7 @@ crash:
       enabled: true
       lookback_days: 6
       threshold: -0.06
-
+ 
 bear_fast:
   - enabled: true
     lookback_days: 4
@@ -65,11 +65,11 @@ asset_crash:
   - SPY:
       enabled: false
       lookback_days: 6
-      threshold: -0.06
+      threshold: -0.04
     QQQ:
       enabled: false
-      lookback_days: 6
-      threshold: -0.06
+      lookback_days: 4
+      threshold: -0.05
     SOXX:
       enabled: false
       lookback_days: 4
@@ -82,6 +82,7 @@ recovery_boost:
     qqq_mom_days: 20
     from_assets: [SGOV_MIX]
     to_asset: TQQQ_MIX
+
 
 soxx_admission_filter:
   - enabled: false
@@ -111,3 +112,13 @@ vol_targeting:
 costs:
   buy: [0.002]
   sell: [0.002]
+
+advanced_rebalance:
+  - reselect_on_override_exit: false
+    anchor_rebalance_on_override_exit: false
+  - reselect_on_override_exit: true
+    anchor_rebalance_on_override_exit: false
+  - reselect_on_override_exit: true
+    anchor_rebalance_on_override_exit: true
+  - reselect_on_override_exit: false
+    anchor_rebalance_on_override_exit: true
